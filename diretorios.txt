@@ -1,0 +1,22 @@
+project-root/
+├── src/
+│   ├── scheduler.py           # agenda varreduras (~6 h ±0.5 h)
+│   ├── queue.py               # fila + Semaphore(10)
+│   ├── engine.py              # core de scraping (Playwright + proxy + retry)
+│   ├── extractor.py           # estratégias múltiplas de extração
+│   ├── notifier.py            # detecta “warning”/“broken”/CAPTCHA + alertas
+│   ├── metrics.py             # coleta tempo, sucesso por domínio, uso de CPU/RAM
+│   ├── db.py                  # Supabase client (monitored_urls, price_history, scrape_logs, aggregations)
+│   └── browser/
+│       ├── manager.py         # inicializa Playwright + proxy + fingerprint rotation
+│       └── stealth_profiles.py# definições de UA, viewport, WebGL/Canvas spoofing
+│
+├── config/
+│   ├── settings.py            # variáveis de ambiente, intervalos, thresholds
+│   └── logging.conf           # configuração Loguru / alertas
+│
+├── docker-compose.yml         # serviço único “scraper” com env. vars
+├── Dockerfile                 # Python 3.11 + Playwright + dependencies
+├── README.md                  # instruções de setup, deploy e uso
+└── scripts/
+    └── init_db.sql            # criação de tabelas no Supabase (DDL)

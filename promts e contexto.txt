@@ -1,0 +1,345 @@
+Prompts de Implementação para Sistema de Monitoramento de Preços
+1. scheduler.py
+Implemente um scheduler.py que agende varreduras de sites a cada ~6h (±0.5h) para monitoramento de preços. O sistema deve:
+1. Carregar URLs a monitorar da tabela monitored_urls no Supabase
+2. Distribuir as varreduras ao longo do período para evitar picos de processamento
+3. Adicionar variação aleatória de ±30min para evitar detecção de padrões
+4. Implementar priorização para sites com histórico de mudanças frequentes
+5. Respeitar configurações de cooldown para domínios com detecção de CAPTCHA
+6. Passar as URLs agendadas para queue.py de forma controlada
+7. Reagendar automaticamente em caso de falha
+8. Registrar logs de agendamento com loguru
+
+Utilize configurações do settings.py para intervalos e thresholds. Implemente tratamento de erros e retry.
+2. queue.py
+Implemente queue.py com uma fila de processamento de URLs e controle de concorrência usando Semaphore(10). O sistema deve:
+1. Usar uma estrutura de dados de fila para URLs agendadas pelo scheduler
+2. Limitar processamento simultâneo a 10 threads via Semaphore
+3. Implementar priorização baseada em:
+   - Urgência de atualização (tempo desde última verificação)
+   - Taxa de sucesso do domínio (priorizar domínios com alta taxa)
+   - Complexidade estimada do site (sites com anti-bot avançado vão para slots especiais)
+4. Fornecer métodos para adicionar URLs, consumir da fila, e monitorar status
+5. Implementar controle de taxa (rate limiting) por domínio
+6. Registrar métricas de throughput e latência
+7. Fornecer mecanismo para pausar/retomar processamento
+8. Tratar timeouts e falhas com requeue com backoff exponencial
+
+Integre com engine.py para processamento e metrics.py para coleta de métricas.
+3. engine.py
+Desenvolva engine.py como núcleo do sistema de scraping utilizando Playwright com proxies e mecanismo de retry. O sistema deve:
+1. Inicializar navegador Playwright com perfis stealth via browser/manager.py
+2. Implementar rotação de proxies residenciais para evitar bloqueios
+3. Configurar timeout adaptativo baseado na complexidade do site
+4. Implementar mecanismo de retry com backoff exponencial para:
+   - Erros de rede
+   - Timeouts
+   - Páginas parcialmente carregadas
+   - Falhas em elementos esperados
+5. Simular comportamento humano realista:
+   - Movimentos de mouse naturais
+   - Padrões de scroll variáveis
+   - Pausas em elementos importantes
+6. Detectar e reagir a sinais de bloqueio 
+7. Integrar com extractor.py para extração de dados
+
+Utilize configurações do stealth_profiles.py para evitar detecção e notifier.py para alertas.
+4. extractor.py
+Desenvolva extractor.py que implementa estratégias múltiplas de extração com aprendizado adaptativo. O sistema deve:
+1. Carregar e gerenciar estratégias de extração da tabela extraction_strategies
+2. Implementar tipos de extração:
+   - Regex: para padrões de texto
+   - XPath: para navegação DOM complexa
+   - CSS: para seletores simples
+   - Semantic: para atributos e contexto
+   - Composite: combinação de estratégias
+3. Extrair dados avançados:
+   - Preço atual
+   - Preço antigo (riscado)
+   - Preço com desconto PIX
+   - Informações de parcelamento
+   - Disponibilidade
+   - Promoções
+4. Validar dados extraídos com regras de consistência
+5. Registrar sucesso/falha para alimentar o sistema de aprendizado
+6. Atualizar métricas de confiança e prioridade de estratégias
+7. Gerar novas variantes de estratégias bem-sucedidas
+
+Integre com db.py para persistência e notifier.py para reportar problemas.
+5. notifier.py
+Implemente notifier.py para detectar estados problemáticos e enviar alertas. O sistema deve:
+1. Monitorar eventos críticos:
+   - Detecção de CAPTCHA
+   - Páginas quebradas (estado "broken")
+   - Avisos de anti-bot
+   - Falhas consecutivas no mesmo domínio
+   - Anomalias de preço (quedas/aumentos drásticos)
+2. Implementar níveis de alerta:
+   - INFO: mudanças significativas mas esperadas
+   - WARNING: potenciais problemas que requerem atenção
+   - ERROR: falhas que impedem extração
+   - CRITICAL: problemas sistêmicos que afetam múltiplos sites
+3. Enviar notificações por:
+   - Email para alertas críticos
+   - Logs estruturados para todos os eventos
+   - Atualizações na tabela scrape_logs
+4. Agregar alertas similares para evitar spam
+5. Fornecer contexto detalhado: screenshot, HTML, logs de erro
+
+Configure thresholds em settings.py e use logging.conf para configuração de logs.
+6. metrics.py
+Desenvolva metrics.py para coletar métricas de desempenho e recursos. O sistema deve:
+1. Coletar métricas de desempenho:
+   - Tempo de carregamento por domínio
+   - Taxa de sucesso de extração por domínio e estratégia
+   - Tempo médio de extração completa
+   - Detecções de anti-bot
+2. Monitorar uso de recursos:
+   - CPU por processo
+   - Uso de RAM
+   - Número de conexões ativas
+   - Tráfego de rede
+3. Calcular estatísticas agregadas:
+   - Performance por período do dia
+   - Tendências de taxa de sucesso
+   - Correlações entre uso de recursos e falhas
+4. Exportar métricas para:
+   - Tabela de métricas no Supabase
+   - Logs estruturados
+5. Implementar alertas de threshold para recursos críticos
+
+Utilize a biblioteca psutil para métricas de sistema e integre com notifier.py para alertas.
+7. db.py
+Implemente db.py para interagir com o Supabase como cliente de banco de dados. O sistema deve:
+1. Configurar conexão com Supabase usando credenciais de settings.py
+2. Implementar operações CRUD para as tabelas:
+   - monitored_urls: URLs a serem monitoradas
+   - price_history: histórico completo de preços e dados extraídos
+   - scrape_logs: registros de operações e erros
+   - extraction_strategies: estratégias de extração com métricas
+   - aggregations: dados agregados para análise
+3. Implementar operações otimizadas:
+   - Bulk insert para históricos de preço
+   - Upsert para estratégias de extração
+   - Query eficiente para filtrar por domínio
+4. Lidar com erros de conexão e retry
+5. Implementar cache local para consultas frequentes
+6. Fornecer métodos para consultas analíticas
+7. Gerenciar migrações e versões de esquema
+
+Siga o esquema definido em init_db.sql e implemente validação de dados.
+8. browser/manager.py
+Desenvolva browser/manager.py para inicializar navegador Playwright com proteções anti-detecção. O sistema deve:
+1. Inicializar e gerenciar instâncias do Playwright
+2. Configurar fingerprinting dinâmico baseado em stealth_profiles.py
+3. Implementar rotação de perfis de usuário:
+   - User-Agent consistente com device
+   - Resolução de tela realista
+   - Configurações de idioma e fuso
+4. Configurar proxies residenciais:
+   - Rotação por sessão ou por requisição
+   - Vinculação de IP a domínio para consistência
+5. Aplicar técnicas anti-fingerprinting:
+   - Spoof de WebGL/Canvas
+   - Emulação de hardware
+   - Simulação de plugins
+6. Gerenciar pool de navegadores para reuso
+7. Implementar limpeza periódica de cookies/cache
+
+Integre com engine.py para operações de scraping e notifier.py para alertas de detecção.
+9. browser/stealth_profiles.py
+Implemente stealth_profiles.py com definições para evitar detecção. O sistema deve:
+1. Definir perfis realistas de navegador:
+   - Combinações coerentes de SO/Browser/Device
+   - User-Agents atualizados e comuns
+   - Configurações de viewport realistas
+2. Implementar técnicas de evasão:
+   - Spoofing de WebGL e Canvas
+   - Emulação de fontes padrão por plataforma
+   - Configurações de hardware consistentes
+3. Criar conjuntos de comportamentos humanos:
+   - Padrões de movimento de mouse
+   - Velocidades e estilos de scroll
+   - Tempos de visualização por elemento
+4. Definir configurações por marketplace:
+   - Perfis específicos para sites problemáticos
+   - Comportamentos customizados por domínio
+5. Implementar rotação inteligente preservando consistência
+
+Cada perfil deve ser internamente consistente e difícil de distinguir de um usuário real.
+10. config/settings.py
+Crie settings.py para centralizar configurações do sistema. O arquivo deve:
+1. Carregar variáveis de ambiente:
+   - Credenciais Supabase
+   - Configurações de proxy
+   - Caminhos de arquivos
+2. Definir intervalos operacionais:
+   - Tempo base entre verificações (6h)
+   - Variação permitida (±0.5h)
+   - Limites de concorrência (10 threads)
+3. Configurar thresholds:
+   - Timeout padrão (30s)
+   - Máximo de retries (3)
+   - Limite de detecções para cooldown (3)
+4. Definir parâmetros de aprendizado:
+   - Taxa de atualização de confiança (0.9)
+   - Threshold para descarte de estratégias (0.1)
+   - Intervalo de reavaliação (50 extrações)
+5. Configurar limites de recursos:
+   - Máximo uso de CPU (80%)
+   - Limites de memória (2GB)
+
+Implementar validação de configurações e valores padrão seguros.
+11. config/logging.conf
+Configure logging.conf para setup do sistema de logs com Loguru. O arquivo deve:
+1. Definir níveis de logging:
+   - DEBUG: informações detalhadas para desenvolvimento
+   - INFO: operações normais
+   - WARNING: problemas potenciais
+   - ERROR: falhas que impedem extração
+   - CRITICAL: falhas sistêmicas
+2. Configurar destinos de log:
+   - Console para desenvolvimento
+   - Arquivo rotativo para produção
+   - Webhook para alertas críticos
+3. Formatar logs com:
+   - Timestamp ISO
+   - Nível
+   - Arquivo/linha
+   - Contexto (domínio, URL)
+   - Mensagem estruturada
+4. Configurar retenção e rotação:
+   - Tamanho máximo por arquivo
+   - Número de backups
+   - Compressão de arquivos antigos
+5. Definir filtros para reduzir ruído
+
+Incluir configurações especiais para alerta em níveis WARNING e acima.
+12. docker-compose.yml
+Crie docker-compose.yml para orquestrar o serviço de scraper. O arquivo deve:
+1. Definir serviço único "scraper" com:
+   - Imagem base do Dockerfile
+   - Variáveis de ambiente:
+     * SUPABASE_URL
+     * SUPABASE_KEY
+     * PROXY_SERVICE_URL
+     * LOG_LEVEL
+   - Volume para persistência:
+     * ./logs:/app/logs
+     * ./data:/app/data
+2. Configurar reinicialização automática
+3. Definir limites de recursos:
+   - CPUs: 2
+   - Memória: 4GB
+4. Configurar healthcheck com:
+   - Comando: python -c "import requests; requests.get('http://localhost:8000/health')"
+   - Intervalo: 30s
+   - Timeout: 10s
+   - Retries: 3
+5. Definir networks para isolamento
+
+Manter simples com serviço único conforme especificação.
+13. Dockerfile
+Crie um Dockerfile para ambiente de execução com Python 3.11 e Playwright. O arquivo deve:
+1. Usar imagem base Python 3.11:
+   FROM python:3.11-slim
+2. Instalar dependências do sistema:
+   - Playwright e navegadores
+   - Ferramentas de rede
+   - Bibliotecas necessárias
+3. Configurar diretório de trabalho:
+   WORKDIR /app
+4. Copiar e instalar dependências Python:
+   - Copiar requirements.txt
+   - Instalar com pip
+5. Instalar navegadores Playwright:
+   RUN playwright install chromium
+6. Copiar código fonte
+7. Configurar usuário não-root
+8. Definir comando de entrada:
+   CMD ["python", "-m", "src.scheduler"]
+
+Otimizar para tamanho reduzido com multi-stage build se possível.
+14. README.md
+Crie README.md com instruções de setup, deploy e uso. O documento deve:
+1. Descrever visão geral do sistema:
+   - Monitoramento adaptativo de preços
+   - Extração avançada de dados
+   - Aprendizado por domínio
+   - Anti-detecção inteligente
+2. Detalhar requisitos:
+   - Conta Supabase
+   - Serviço de proxy residencial
+   - Docker e Docker Compose
+3. Fornecer instruções de setup:
+   - Configuração de variáveis de ambiente
+   - Inicialização do banco (init_db.sql)
+   - Construção e execução com Docker
+4. Documentar uso do sistema:
+   - Adição de URLs via admin panel/DB
+   - Consulta de histórico de preços
+   - Monitoramento de logs e métricas
+5. Incluir troubleshooting comum
+6. Listar limitações conhecidas
+
+Manter foco em instruções práticas e diretas para equipe técnica.
+15. scripts/init_db.sql
+Crie init_db.sql para definição das tabelas no Supabase. O script deve:
+1. Criar tabela monitored_urls:
+   - id UUID PRIMARY KEY
+   - url TEXT NOT NULL
+   - domain TEXT NOT NULL
+   - title TEXT
+   - priority INTEGER
+   - check_frequency INTEGER (minutos)
+   - active BOOLEAN
+   - created_at TIMESTAMP
+   - last_check TIMESTAMP
+   - metadata JSONB
+2. Criar tabela price_history:
+   - id UUID PRIMARY KEY
+   - url_id UUID REFERENCES monitored_urls
+   - price DECIMAL(10,2)
+   - old_price DECIMAL(10,2)
+   - pix_price DECIMAL(10,2)
+   - installment_price JSONB
+   - availability TEXT
+   - availability_text TEXT
+   - shipping_info JSONB
+   - seller TEXT
+   - promotion_labels TEXT[]
+   - promotion_end TIMESTAMP
+   - checked_at TIMESTAMP
+   - extraction_strategy_id UUID
+   - extraction_confidence FLOAT
+3. Criar tabela scrape_logs:
+   - id UUID PRIMARY KEY
+   - url_id UUID
+   - status TEXT
+   - message TEXT
+   - error_type TEXT
+   - extraction_time FLOAT
+   - created_at TIMESTAMP
+   - metadata JSONB
+4. Criar tabela extraction_strategies:
+   - id UUID PRIMARY KEY
+   - domain TEXT
+   - strategy_type TEXT
+   - strategy_data JSONB
+   - success_rate FLOAT
+   - last_success TIMESTAMP
+   - confidence_level FLOAT
+   - priority INTEGER
+   - created_at TIMESTAMP
+   - updated_at TIMESTAMP
+   - sample_urls TEXT[]
+5. Criar tabela aggregations:
+   - id UUID PRIMARY KEY
+   - domain TEXT
+   - metric_type TEXT
+   - value FLOAT
+   - period_start TIMESTAMP
+   - period_end TIMESTAMP
+   - metadata JSONB
+
+Adicionar índices apropriados para consultas frequentes.

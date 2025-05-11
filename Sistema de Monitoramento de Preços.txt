@@ -1,0 +1,633 @@
+
+PRD: Sistema de Monitoramento de Preços com Aprendizado Adaptativo e Extração Avançada
+1. Visão Geral Refinada
+O sistema de monitoramento de preços é aprimorado para incluir um mecanismo de aprendizado adaptativo que otimiza estratégias de extração com base em sucessos anteriores por domínio. Além disso, expandimos as capacidades de extração para incluir dados adicionais de valor como preço antigo, preço atual, preço com desconto PIX, disponibilidade do produto e outras informações relevantes.
+2. Diagrama de Alto Nível Atualizado
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│   Admin Panel   │◀────▶│   Supabase DB   │◀────▶│  VPS Scraper    │
+│ (URLs, Logs,    │      │ (tabelas:       │      │ (scheduler,     │
+│  Alertas, Tabela│      │  monitored_urls,│      │  queue, core,   │
+│  de Regras)     │      │  price_history, │      │  engine adaptativo,
+└─────────────────┘      │  scrape_logs,   │      │  extrator avançado)
+                         │  extraction_    │      └─────────────────┘
+                         │  strategies)    │             ▲
+                         └─────────────────┘             │
+                                                         │
+                                                         ▼
+                                               ┌─────────────────┐
+                                               │  Fingerprinting │
+                                               │  & Anti-Detect  │
+                                               │  (Stealth,      │
+                                               │   Simulação,    │
+                                               │   CAPTCHA)      │
+                                               └─────────────────┘
+3. Componentes Aprimorados
+3.1 Sistema de Aprendizado para Extração Adaptativa
+3.1.1 Nova Tabela: extraction_strategies
+CampoTipoDescriçãoiduuidIdentificador únicodomaintextDomínio do site (ex: amazon.com.br)strategy_typetextTipo de estratégia (regex, xpath, css, semantic, ml)strategy_datajsonbParâmetros específicos da estratégiasuccess_ratefloatTaxa de sucesso (0.0 - 1.0)last_successtimestampÚltima extração bem-sucedidaconfidence_levelfloatNível de confiança (0.0 - 1.0)priorityintegerOrdem de tentativa (menor = tenta primeiro)created_attimestampData de criaçãoupdated_attimestampData da última atualizaçãosample_urlstext[]URLs de exemplo onde esta estratégia funciona
+3.1.2 Workflow de Aprendizado Adaptativo
+
+Inicialização do Domínio:
+
+Quando uma nova URL é adicionada, o sistema determina o domínio (ex: amazon.com.br)
+Verifica se já existem estratégias para este domínio
+Se não existirem, carrega estratégias padrão para o domínio ou estratégias genéricas
+
+
+Tentativas Ordenadas:
+
+Para cada URL, tenta estratégias em ordem de prioridade e confiança
+Documenta resultados detalhados de cada tentativa
+
+
+Feedback Loop:
+
+Após cada extração bem-sucedida:
+
+Incrementa contadores de sucesso
+Aumenta o nível de confiança da estratégia
+Ajusta prioridade se necessário
+
+
+Após cada falha:
+
+Diminui confiança na estratégia
+Reavalia prioridade
+
+
+
+
+Ajuste Periódico:
+
+A cada 100 extrações por domínio:
+
+Analisa padrões de sucesso/falha
+Reorganiza prioridades
+Descarta estratégias com confiança < 0.1
+Tenta gerar novas variantes das estratégias bem-sucedidas
+
+
+
+
+Meta-Aprendizado:
+
+O sistema mantém estatísticas sobre quais tipos de estratégias funcionam melhor para cada marketplace
+Desenvolve "meta-regras" sobre abordagens eficazes por categorias de sites
+
+
+
+3.1.3 Tipos de Estratégias Suportadas
+TipoDescriçãoExemplo de strategy_dataregexPadrões de expressão regular{"pattern": "R\\$\\s*(\\d+[.,]\\d{2})", "flags": "i"}xpathSeletores XPath{"path": "//span[@class='price-current']"}cssSeletores CSS{"selector": ".product-price .current"}semanticAtributos semânticos{"attributes": ["itemprop='price'", "data-price"]}mlBaseado em machine learning{"model_type": "price_detector", "confidence_threshold": 0.7}compositeCombinação de estratégias{"steps": [{"type": "css", "data": {...}}, {"type": "regex", "data": {...}}]}
+3.2 Extração Avançada de Dados
+3.2.1 Campos Adicionais para Extração
+Ampliamos a tabela price_history para incluir:
+CampoTipoDescriçãourl_iduuidReferência à URL monitoradapricedecimal(10,2)Preço atualold_pricedecimal(10,2)Preço anterior (riscado)pix_pricedecimal(10,2)Preço com desconto PIXinstallment_pricejsonb{"value": 99.90, "times": 12, "interest": "com juros"}availabilitytext"in_stock", "low_stock", "out_of_stock", "pre_order"availability_texttextTexto literal ("Últimas 2 unidades", etc.)shipping_infojsonb{"free": true, "time": "2-3 dias úteis"}sellertextNome do vendedor (marketplace)promotion_labelstext[]["Black Friday", "Liquidação", etc.]promotion_endtimestampData/hora de término da promoção (se disponível)checked_attimestampData/hora da verificaçãoextraction_strategy_iduuidEstratégia que obteve sucessoextraction_confidencefloatNível de confiança (0.0 - 1.0)
+3.2.2 Extração Avançada - Workflow
+
+Detecção de Contexto:
+
+Identifica blocos de preço dentro da página
+Usa heurística de proximidade para associar elementos relacionados
+Encontra padrões comuns de layout de preço/promoção
+
+
+Extração Multicampo:
+
+Para cada campo (preço, preço antigo, PIX, etc.):
+
+Aplica estratégias específicas por campo
+Utiliza indicadores semânticos (ex: "à vista no PIX")
+Valida consistência (ex: preço PIX < preço normal)
+
+
+
+
+Validação Cruzada:
+
+Verifica se valores extraídos fazem sentido matematicamente
+Compara valores entre si para detectar inconsistências
+Utiliza histórico para detectar anomalias (ex: queda de 90% no preço)
+
+
+Extração Contextual:
+
+Captura elementos textuais próximos que fornecem contexto
+Detecta rótulos de promoção, texto de disponibilidade, etc.
+Analisa semântica para entender o contexto do preço
+
+
+
+3.3 Fingerprinting & Anti-Detecção Avançados
+3.3.1 Camadas de Stealth
+Implementação de múltiplas camadas de técnicas anti-detecção:
+
+Nível Browser:
+
+Playwright-extra com plugins stealth
+Ocultação de sinais de automação
+Emulação de hardware acelerado
+Configuração dinâmica de WebGL, Canvas, etc.
+
+
+Nível Comportamental:
+
+Movimentos de mouse naturais com aceleração/desaceleração
+Padrões humanos de scroll (pausas, velocidade variada)
+Atrasos realistas entre interações
+Digitação com ritmo variável (quando aplicável)
+
+
+Nível Rede:
+
+Gestão de cookies e sessões
+Fingerprinting de TLS/SSL personalizado
+Rotação de IPs por rede de proxies residenciais
+Simulação de padrões de cabeçalhos HTTP realistas
+
+
+
+3.3.2 Perfis de Usuário Dinâmicos
+Cada requisição utiliza um perfil de usuário coerente e completo:
+AspectoDetalhesDeviceModelo e versão específicos (ex: "iPhone 13 Pro", "Samsung Galaxy S22")BrowserVersão, plugins, configurações (ex: Chrome 112.0.5615.49)SistemaOS, versão, arquitetura (ex: Windows 11, macOS 13.3)ViewportDimensões realistas + razão de tela coerente com dispositivoLocalizaçãoGeolocalização + fuso horário + idioma consistentesFonte de TráfegoReferrer realista (ex: busca Google, link direto, redes sociais)
+3.3.3 Técnicas de Evasão de CAPTCHA
+
+Detecção Proativa:
+
+Monitoramento contínuo de padrões de CAPTCHA
+Identificação precoce de triggers de CAPTCHA
+Ajuste de comportamento para evitar gatilhos
+
+
+Estratégias de Mitigação:
+
+Rotação de IPs quando CAPTCHA é detectado
+Redução da taxa de requisições para domínios problemáticos
+Hibernação temporária de monitoramento para sites sensíveis
+
+
+
+4. Fluxo de Trabalho Detalhado
+4.1 Processo de Extração com Aprendizado
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│  Requisição   │     │  Seleção de   │     │   Extração    │     │   Feedback    │
+│  URL alvo     ├────▶│  Estratégias  ├────▶│  Multicampo   ├────▶│   & Ajuste    │
+└───────────────┘     └───────────────┘     └───────────────┘     └───────────────┘
+                             ▲                     │                     │
+                             │                     ▼                     │
+                             │              ┌───────────────┐            │
+                             │              │  Validação &  │            │
+                             │              │  Normalização │            │
+                             │              └───────────────┘            │
+                             │                     │                     │
+                             │                     ▼                     │
+                             │              ┌───────────────┐            │
+                             └──────────────┤  Atualização  │◀───────────┘
+                                            │  Estratégias  │
+                                            └───────────────┘
+
+Para cada URL agendada:
+
+O sistema identifica o domínio e carrega estratégias de extração apropriadas
+Configura um perfil de usuário dinâmico e coerente
+Inicializa sessão do navegador com configurações stealth
+
+
+Navegação e Renderização:
+
+Acessa a URL com comportamento simulado humano
+Aguarda carregamento completo com detecção de estado de prontidão
+Executa interações preliminares se necessário (ex: fechar pop-ups)
+
+
+Extração Adaptativa:
+
+Para cada tipo de dado (preço, preço antigo, PIX, etc.):
+
+Tenta estratégias em ordem de prioridade/confiança
+Aplica transformações e normalizações específicas
+Valida resultados contra regras de domínio
+
+
+
+
+Persistência e Feedback:
+
+Armazena resultados na tabela price_history
+Registra estratégias bem-sucedidas e fracassadas
+Atualiza métricas de confiança e prioridade
+Ajusta meta-parâmetros de aprendizado
+
+
+
+4.2 Diagrama de Sequência para Aprendizado Adaptativo
+┌─────────┐       ┌───────────┐       ┌─────────────┐       ┌───────────────┐
+│Scheduler│       │Queue/Engine│       │Extractor    │       │Learning Module│
+└────┬────┘       └─────┬─────┘       └──────┬──────┘       └───────┬───────┘
+     │                  │                    │                      │
+     │ trigger_scrape() │                    │                      │
+     ├─────────────────▶│                    │                      │
+     │                  │                    │                      │
+     │                  │ load_strategies()  │                      │
+     │                  ├───────────────────▶│                      │
+     │                  │                    │                      │
+     │                  │                    │  get_domain_strategies()
+     │                  │                    ├─────────────────────▶│
+     │                  │                    │                      │
+     │                  │                    │ strategies_by_priority
+     │                  │                    │◀─────────────────────┤
+     │                  │                    │                      │
+     │                  │ extract_with_strategies()                 │
+     │                  ├───────────────────▶│                      │
+     │                  │                    │                      │
+     │                  │ extraction_results │                      │
+     │                  │◀───────────────────┤                      │
+     │                  │                    │                      │
+     │                  │ update_learning()  │                      │
+     │                  ├─────────────────────────────────────────▶│
+     │                  │                    │                      │
+     │                  │                    │                      │
+     │                  │                    │ update_strategy_metrics()
+     │                  │                    │                      │
+     │                  │                    │                      │
+     │                  │                    │  generate_variants() │
+     │                  │                    │                      │
+     │                  │                    │                      │
+     │                  │                    │ reprioritize()       │
+     │                  │                    │                      │
+     │                  │                    │                      │
+5. Detalhes de Implementação do Aprendizado Adaptativo
+5.1 Inicialização de Estratégias
+Para cada novo domínio, o sistema inicializa um conjunto de estratégias de extração:
+
+Estratégias Genéricas: Aplicáveis a qualquer site
+json{
+  "strategy_type": "regex",
+  "strategy_data": {
+    "pattern": "R\\$\\s*(\\d+[.,]\\d{2})",
+    "flags": "i",
+    "target_field": "price"
+  },
+  "confidence_level": 0.5,
+  "priority": 5
+}
+
+Estratégias Específicas por Marketplace: Pré-configuradas para sites conhecidos
+json{
+  "domain": "amazon.com.br",
+  "strategy_type": "css",
+  "strategy_data": {
+    "selector": "#priceblock_ourprice, .a-price .a-offscreen",
+    "target_field": "price",
+    "transformation": "extract_decimal"
+  },
+  "confidence_level": 0.8,
+  "priority": 1
+}
+
+Estratégias por Categoria de Campo: Específicas para cada tipo de dado
+json{
+  "domain": "*",
+  "strategy_type": "semantic",
+  "strategy_data": {
+    "attributes": ["data-price-pix", "itemprop='pix-price'", "class*='pix'"],
+    "target_field": "pix_price",
+    "context_terms": ["pix", "à vista", "desconto", "boleto"]
+  },
+  "confidence_level": 0.6,
+  "priority": 3
+}
+
+
+5.2 Algoritmo de Aprendizado
+O sistema utiliza um algoritmo de aprendizado por reforço simplificado:
+
+Atualização de Confiança:
+Para cada extração bem-sucedida:
+  nova_confiança = confiança_atual * 0.9 + 0.1
+Para cada extração falha:
+  nova_confiança = confiança_atual * 0.9
+
+Ajuste de Prioridade:
+Para cada 50 extrações em um domínio:
+  Ordenar estratégias por (confiança * fator_sucesso)
+  Atribuir prioridades (1, 2, 3, ...) na nova ordem
+
+Geração de Variantes:
+Para estratégias com confiança > 0.8:
+  Gerar variantes com pequenas modificações
+  Atribuir confiança inicial = confiança_pai * 0.5
+  Testar em 5 URLs antes de incluir permanentemente
+
+Descarte de Estratégias Ineficazes:
+Para estratégias com confiança < 0.1 e > 20 tentativas:
+  Mover para arquivo de estratégias arquivadas
+  Remover da rotação ativa
+
+
+5.3 Estratégias de Extração Avançada por Campo
+5.3.1 Preço Atual
+json{
+  "strategy_type": "composite",
+  "strategy_data": {
+    "steps": [
+      {
+        "type": "css",
+        "data": {
+          "selector": ".product-price .current, .price-current, [itemprop='price']"
+        }
+      },
+      {
+        "type": "regex",
+        "data": {
+          "pattern": "R\\$\\s*(\\d+[.,]\\d{2})"
+        }
+      },
+      {
+        "type": "transformation",
+        "data": {
+          "func": "extract_decimal"
+        }
+      }
+    ]
+  }
+}
+5.3.2 Preço Antigo (Riscado)
+json{
+  "strategy_type": "composite",
+  "strategy_data": {
+    "steps": [
+      {
+        "type": "css",
+        "data": {
+          "selector": ".product-price .old, .price-old, [data-price-type='old'], .text-decoration-line-through"
+        }
+      },
+      {
+        "type": "context",
+        "data": {
+          "terms": ["de:", "de ", "antes:", "regular:"],
+          "max_distance": 5
+        }
+      },
+      {
+        "type": "transformation",
+        "data": {
+          "func": "extract_decimal"
+        }
+      }
+    ]
+  }
+}
+5.3.3 Preço PIX
+json{
+  "strategy_type": "composite",
+  "strategy_data": {
+    "steps": [
+      {
+        "type": "context",
+        "data": {
+          "terms": ["pix", "à vista", "boleto", "desconto"],
+          "max_distance": 10
+        }
+      },
+      {
+        "type": "css",
+        "data": {
+          "selector": ".pix-price, [data-payment='pix'], .price-pix"
+        }
+      },
+      {
+        "type": "validation",
+        "data": {
+          "rule": "value < parent_price",
+          "margin": 0.05
+        }
+      }
+    ]
+  }
+}
+5.3.4 Disponibilidade
+json{
+  "strategy_type": "composite",
+  "strategy_data": {
+    "steps": [
+      {
+        "type": "css",
+        "data": {
+          "selector": ".stock, .availability, [data-stock], [itemprop='availability']"
+        }
+      },
+      {
+        "type": "semantic",
+        "data": {
+          "mapping": {
+            "in_stock": ["em estoque", "disponível", "pronta entrega"],
+            "low_stock": ["últimas unidades", "restam apenas", "poucas unidades"],
+            "out_of_stock": ["esgotado", "indisponível", "não disponível", "avise-me"],
+            "pre_order": ["pré-venda", "lançamento", "pré-encomenda"]
+          }
+        }
+      }
+    ]
+  }
+}
+6. Estratégias Anti-Detecção Detalhadas
+6.1 Fingerprinting Dinâmico
+O sistema implementa fingerprinting dinâmico que cria perfis de navegador consistentes:
+6.1.1 Geração de Perfil
+json{
+  "profile": {
+    "device": {
+      "type": "desktop",
+      "brand": "Apple",
+      "model": "MacBook Pro",
+      "year": 2023,
+      "screen": {
+        "width": 1440,
+        "height": 900,
+        "color_depth": 24,
+        "pixel_ratio": 2
+      }
+    },
+    "browser": {
+      "name": "Chrome",
+      "version": "112.0.5615.49",
+      "language": "pt-BR",
+      "platform": "MacIntel",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+    },
+    "plugins": [
+      {
+        "name": "Chrome PDF Plugin",
+        "description": "Portable Document Format",
+        "mimetype": "application/pdf"
+      }
+    ],
+    "fonts": ["Arial", "Helvetica", "Times New Roman", "Courier New"],
+    "timezone": {
+      "name": "America/Sao_Paulo",
+      "offset": -180
+    },
+    "geolocation": {
+      "latitude": -23.5505,
+      "longitude": -46.6333,
+      "accuracy": 100
+    }
+  }
+}
+6.1.2 Configuração de Evasão de Fingerprinting
+json{
+  "stealth_config": {
+    "webgl": {
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
+      "noise": 0.1
+    },
+    "canvas": {
+      "mode": "noise",
+      "noise": 0.05
+    },
+    "audio": {
+      "mode": "noise",
+      "noise": 0.02
+    },
+    "hardware": {
+      "concurrency": 8,
+      "memory": 8,
+      "device_memory": 8
+    },
+    "navigator": {
+      "platform": "MacIntel",
+      "product": "Gecko",
+      "vendor": "Google Inc."
+    }
+  }
+}
+6.2 Simulação de Comportamento Humano
+6.2.1 Movimentos de Mouse
+json{
+  "mouse_movement": {
+    "style": "human",
+    "speed_variance": 0.3,
+    "pause_probability": 0.1,
+    "hover_elements": [".product-title", ".price", ".buy-button"],
+    "overshoot_probability": 0.2,
+    "jitter": 0.05
+  }
+}
+6.2.2 Padrões de Scroll
+json{
+  "scroll_behavior": {
+    "initial_delay": [1000, 2000],
+    "scroll_style": "incremental",
+    "scroll_speeds": [100, 500],
+    "pause_probability": 0.3,
+    "pause_duration": [500, 2000],
+    "read_pauses": true
+  }
+}
+6.2.3 Simulação de Visualização
+json{
+  "viewing_behavior": {
+    "focus_elements": [".product-image", ".price-block", ".description"],
+    "viewing_time": {
+      "product_image": [2000, 5000],
+      "price_info": [1000, 3000],
+      "product_details": [3000, 8000]
+    },
+    "reading_speed": "medium"
+  }
+}
+6.3 Detecção e Evasão de CAPTCHA
+6.3.1 Detecção de CAPTCHA
+json{
+  "captcha_detection": {
+    "element_patterns": [
+      "iframe[src*='captcha']",
+      "iframe[src*='recaptcha']",
+      "iframe[src*='hcaptcha']",
+      ".g-recaptcha",
+      "[class*='captcha']"
+    ],
+    "text_patterns": [
+      "captcha",
+      "verificação",
+      "robô",
+      "humano",
+      "verificar identidade"
+    ],
+    "url_patterns": [
+      "captcha",
+      "challenge",
+      "verify",
+      "check"
+    ]
+  }
+}
+6.3.2 Estratégias de Evasão
+json{
+  "captcha_mitigation": {
+    "detection_actions": {
+      "log_event": true,
+      "store_screenshot": true,
+      "alert_admin": true
+    },
+    "retry_strategy": {
+      "max_retries": 3,
+      "backoff": "exponential",
+      "delay_start": 600,
+      "proxy_rotation": true,
+      "fingerprint_rotation": true
+    },
+    "domain_cooldown": {
+      "period": 43200,
+      "threshold": 3,
+      "scaling_factor": 2
+    }
+  }
+}
+7. Benefícios do Sistema Aprimorado
+7.1 Adaptabilidade Avançada
+
+Resistência a Mudanças de Layout: O sistema adapta estratégias de extração sem intervenção manual
+Aprendizado Contínuo: Melhora progressivamente com cada extração bem-sucedida
+Generalização por Domínio: Transfere aprendizado entre URLs similares do mesmo domínio
+
+7.2 Dados Mais Ricos
+
+Análise Completa de Preços: Captura todas as variantes de preço (normal, PIX, parcelado)
+Detecção de Promoções: Identifica e classifica tipos de promoções
+Contexto de Disponibilidade: Fornece informações detalhadas sobre estoque
+
+7.3 Furtividade Superior
+
+Perfis Consistentes: Cada sessão mantém uma identidade digital coerente
+Comportamento Realista: Interações que imitam padrões humanos reais
+Evasão de Detecção: Capacidade de driblar sistemas anti-bot avançados
+
+7.4 Gestão Inteligente de Recursos
+
+Tentativas Otimizadas: Prioriza estratégias com maior probabilidade de sucesso
+Tempo de Processamento Reduzido: Menos tentativas necessárias por URL
+Adaptação à Dificuldade: Ajusta comportamento baseado na complexidade do site
+
+8. Cronograma de Implementação
+FaseDuraçãoEntregasModelagem do Sistema de Aprendizado2 diasEsquema de BD, documentação de algoritmosImplementação da Extração Multicampo2 diasComponente de extração, estratégias iniciaisDesenvolvimento do Mecanismo Adaptativo3 diasMotor de aprendizado, feedback loopImplementação Anti-Detecção2 diasFingerprinting, simulação comportamentalTestes e Ajustes1 diaAvaliação de precisão, ajuste de parâmetros
+Total: 10 dias úteis
+9. Métricas de Sucesso
+
+Taxa de sucesso de extração > 95%
+Tempo médio por extração < 15 segundos
+Precisão de dados > 99%
+Taxa de detecção < 1%
+Adaptação a mudanças de layout em < 5 tentativas
+
+10. Acompanhamento e Evolução
+Para cada domínio monitorado, o sistema gera relatórios que incluem:
+
+Desempenho das estratégias (taxa de sucesso, tempo médio)
+Evolução da confiança ao longo do tempo
+Padrões de detecção e bloqueio
+Sugestões para melhorias manuais quando necessário
+
+Esses relatórios permitem ajuste fino contínuo do sistema e desenvolvimento de novas estratégias genéricas que beneficiam todos os domínios.

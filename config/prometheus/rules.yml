@@ -1,0 +1,79 @@
+groups:
+  - name: scraper
+    rules:
+      - alert: HighErrorRate
+        expr: rate(scraper_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High error rate detected
+          description: Error rate is above 10% for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#high-error-rate
+
+      - alert: HighLatency
+        expr: rate(scraper_request_duration_seconds_sum[5m]) / rate(scraper_request_duration_seconds_count[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High latency detected
+          description: Average request duration is above 1 second for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#high-latency
+
+      - alert: HighCPUUsage
+        expr: process_cpu_seconds_total > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High CPU usage detected
+          description: CPU usage is above 80% for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#high-cpu-usage
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 3.2e9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High memory usage detected
+          description: Memory usage is above 3.2GB for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#high-memory-usage
+
+      - alert: ScraperDown
+        expr: up{job="scraper"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Scraper is down
+          description: Scraper has been down for more than 1 minute
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#scraper-down
+
+      - alert: HighQueueSize
+        expr: scraper_queue_size > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High queue size detected
+          description: Queue size is above 1000 items for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#high-queue-size
+
+      - alert: LowProcessingRate
+        expr: rate(scraper_items_processed_total[5m]) < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low processing rate detected
+          description: Processing rate is below 10 items per second for the last 5 minutes
+          dashboard: http://grafana:3000/d/scraper/scraper-dashboard
+          runbook: https://github.com/your-org/scraper/wiki/Runbook#low-processing-rate 

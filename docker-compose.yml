@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik
+      - ./config/certificates:/etc/certificates
+    networks:
+      - scraper-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH_USERS}"
+
+  scraper:
+    build: .
+    container_name: scraper
+    restart: unless-stopped
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - BRIGHTDATA_USERNAME=${BRIGHTDATA_USERNAME:-}
+      - BRIGHTDATA_PASSWORD=${BRIGHTDATA_PASSWORD:-}
+      - BRIGHTDATA_HOST=${BRIGHTDATA_HOST:-brd.superproxy.io}
+      - BRIGHTDATA_PORT=${BRIGHTDATA_PORT:-33335}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-America/Sao_Paulo}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - scraper-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.scraper.rule=Host(`api.${DOMAIN}`)"
+      - "traefik.http.routers.scraper.entrypoints=websecure"
+      - "traefik.http.routers.scraper.tls=true"
+      - "traefik.http.services.scraper.loadbalancer.server.port=8000"
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - scraper-network
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-scraper}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - scraper-network
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - scraper-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GF_SERVER_PROTOCOL=https
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - scraper-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  scraper-network:
+    name: scraper-network
+    driver: bridge 

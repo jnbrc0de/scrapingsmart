@@ -1,0 +1,62 @@
+collectors:
+  enabled:
+    - cpu
+    - diskstats
+    - filesystem
+    - loadavg
+    - meminfo
+    - netdev
+    - netstat
+    - textfile
+    - time
+    - vmstat
+    - logind
+    - systemd
+    - tcpstat
+    - filefd
+    - interrupts
+    - ntp
+    - sockstat
+    - stat
+    - textfile
+    - time
+    - uname
+    - version
+    - zfs
+
+collectors:
+  disabled:
+    - arp
+    - bcache
+    - bonding
+    - conntrack
+    - drbd
+    - edac
+    - entropy
+    - infiniband
+    - ipvs
+    - mdadm
+    - megacli
+    - mountstats
+    - nfs
+    - ntp
+    - qdisc
+    - runit
+    - supervisord
+    - syslog
+    - udev
+    - wifi
+    - xfs
+    - zfs
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
+    metrics_path: /metrics
+    scheme: http 
