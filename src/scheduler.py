@@ -8,7 +8,7 @@ from loguru import logger
 from supabase import create_client, Client
 from dataclasses import dataclass
 from collections import defaultdict
-from config import settings as settings_module
+from config.settings import settings
 
 # Configuration
 BASE_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
