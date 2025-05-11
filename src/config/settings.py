@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from loguru import logger
 from datetime import timedelta
 from playwright.sync_api import sync_playwright
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BaseSettings
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
@@ -98,21 +98,6 @@ PRIORITY_THRESHOLD = 86400  # 24 hours in seconds
 LOG_LEVEL = 'INFO'
 LOG_ROTATION_SIZE = '100 MB'
 LOG_RETENTION_DAYS = 7
-
-# Database settings
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
-
-# Redis configuration
-REDIS_CONFIG = {
-    'url': os.getenv('REDIS_URL', ''),
-    'max_connections': 100,
-    'timeout': 20,
-    'retry_on_timeout': True
-}
 
 # Proxy settings (opcional)
 PROXY_ENABLED = os.getenv('PROXY_ENABLED', 'false').lower() == 'true'
@@ -256,9 +241,15 @@ class LoggingConfig:
 class ScrapingSettings(BaseModel):
     max_concurrent: int = Field(default=10, description="Número máximo de domínios concorrentes")
 
-class Settings(BaseModel):
+class Settings(BaseSettings):
+    SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
+    SUPABASE_KEY: str = Field(..., env="SUPABASE_KEY")
     scraping: ScrapingSettings = ScrapingSettings()
     # Futuras seções: database, security, etc.
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
 
