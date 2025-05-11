@@ -8,7 +8,7 @@ from loguru import logger
 from supabase import create_client, Client
 from dataclasses import dataclass
 from collections import defaultdict
-from config.settings import settings
+from config import settings as settings_module
 
 # Configuration
 BASE_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
@@ -52,7 +52,7 @@ class SmartScheduler:
     def __init__(self):
         """Initialize the scheduler with Supabase connection."""
         try:
-            self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            self.supabase: Client = create_client(settings_module.SUPABASE_URL, settings_module.SUPABASE_KEY)
             self.url_queue: Dict[str, List[str]] = defaultdict(list)
             self.domain_last_scrape: Dict[str, datetime] = {}
             self.domain_blocked: Set[str] = set()
@@ -60,7 +60,7 @@ class SmartScheduler:
             self.active_sessions: Dict[str, BrowserSession] = {}
             self.domain_cooldowns: Dict[str, datetime] = {}
             self.processing_locks: Set[str] = set()
-            self.semaphore = asyncio.Semaphore(settings.scraping.max_concurrent)
+            self.semaphore = asyncio.Semaphore(settings_module.scraping.max_concurrent)
             self._setup_logging()
         except Exception as e:
             logger.error(f"Failed to initialize scheduler: {str(e)}")
@@ -71,9 +71,9 @@ class SmartScheduler:
         try:
             logger.add(
                 "logs/scheduler_{time}.log",
-                rotation=settings.log_rotation_size,
-                retention=f"{settings.log_retention_days} days",
-                level=settings.log_level,
+                rotation=settings_module.LOG_ROTATION_SIZE,
+                retention=f"{settings_module.LOG_RETENTION_DAYS} days",
+                level=settings_module.LOG_LEVEL,
                 format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
             )
         except Exception as e:
@@ -121,13 +121,13 @@ class SmartScheduler:
             last_change = url_data.get("last_price_change_at")
             if last_change:
                 last_change_time = datetime.fromisoformat(last_change)
-                if (datetime.utcnow() - last_change_time).total_seconds() < settings.PRIORITY_THRESHOLD:
+                if (datetime.utcnow() - last_change_time).total_seconds() < settings_module.PRIORITY_THRESHOLD:
                     priority += 2
 
             last_scrape = url_data.get("last_check")
             if last_scrape:
                 last_scrape_time = datetime.fromisoformat(last_scrape)
-                if (datetime.utcnow() - last_scrape_time).total_seconds() > settings.PRIORITY_THRESHOLD:
+                if (datetime.utcnow() - last_scrape_time).total_seconds() > settings_module.PRIORITY_THRESHOLD:
                     priority += 1
 
             return priority
@@ -143,16 +143,16 @@ class SmartScheduler:
                 .select("created_at") \
                 .eq("domain", domain) \
                 .eq("error_type", "captcha-blocked") \
-                .gte("created_at", (datetime.utcnow() - timedelta(hours=settings.CAPTCHA_WINDOW_HOURS)).isoformat()) \
+                .gte("created_at", (datetime.utcnow() - timedelta(hours=settings_module.CAPTCHA_WINDOW_HOURS)).isoformat()) \
                 .execute()
 
-            if len(response.data) >= settings.MAX_CAPTCHA_BLOCKS:
+            if len(response.data) >= settings_module.MAX_CAPTCHA_BLOCKS:
                 self.domain_blocked.add(domain)
                 logger.warning(f"Domain {domain} is in cooldown due to multiple CAPTCHA blocks")
                 return True
 
             # Check general error rate
-            if self.domain_errors[domain] >= settings.MAX_DOMAIN_ERRORS:
+            if self.domain_errors[domain] >= settings_module.MAX_DOMAIN_ERRORS:
                 logger.warning(f"Domain {domain} is in cooldown due to high error rate")
                 return True
 
@@ -165,21 +165,21 @@ class SmartScheduler:
     def _calculate_next_scrape_time(self, url: URLMetadata) -> datetime:
         """Calculate next scrape time with randomization."""
         try:
-            base_time = datetime.utcnow() + timedelta(seconds=settings.BASE_INTERVAL)
+            base_time = datetime.utcnow() + timedelta(seconds=settings_module.BASE_INTERVAL)
             
             # Add random variation
-            variation = secrets.randbelow(settings.RANDOM_VARIATION * 2) - settings.RANDOM_VARIATION
+            variation = secrets.randbelow(settings_module.RANDOM_VARIATION * 2) - settings_module.RANDOM_VARIATION
             next_time = base_time + timedelta(seconds=variation)
 
             # Add cooldown for blocked domains
             if url.domain in self.domain_blocked:
-                next_time += timedelta(seconds=settings.DOMAIN_COOLDOWN)
+                next_time += timedelta(seconds=settings_module.DOMAIN_COOLDOWN)
 
             return next_time
         except Exception as e:
             logger.error(f"Error calculating next scrape time: {str(e)}")
             # Default to base interval on error
-            return datetime.utcnow() + timedelta(seconds=settings.BASE_INTERVAL)
+            return datetime.utcnow() + timedelta(seconds=settings_module.BASE_INTERVAL)
 
     async def schedule_urls(self, urls: List[URLMetadata]):
         """Schedule URLs for processing with intelligent batching."""
@@ -195,8 +195,8 @@ class SmartScheduler:
             tasks = []
             for domain, domain_urls in domain_groups.items():
                 # Split into batches
-                batches = [domain_urls[i:i + settings.BATCH_SIZE] 
-                          for i in range(0, len(domain_urls), settings.BATCH_SIZE)]
+                batches = [domain_urls[i:i + settings_module.BATCH_SIZE] 
+                          for i in range(0, len(domain_urls), settings_module.BATCH_SIZE)]
                 
                 for batch in batches:
                     task = asyncio.create_task(
@@ -268,8 +268,8 @@ class SmartScheduler:
         try:
             # Add random variation to interval
             interval = BASE_INTERVAL + random.uniform(
-                -settings.INTERVAL_VARIATION,
-                settings.INTERVAL_VARIATION
+                -settings_module.INTERVAL_VARIATION,
+                settings_module.INTERVAL_VARIATION
             )
             
             # Process URL
@@ -292,7 +292,7 @@ class SmartScheduler:
             else:
                 data = {
                     "retry_count": url.retry_count + 1,
-                    "status": "warning" if url.retry_count + 1 >= settings.MAX_RETRIES else "active"
+                    "status": "warning" if url.retry_count + 1 >= settings_module.MAX_RETRIES else "active"
                 }
                 self.domain_errors[url.domain] += 1
 
@@ -340,7 +340,7 @@ class SmartScheduler:
                 urls = await self.load_monitored_urls()
                 await self.schedule_urls(urls)
                 # Aguarda até o próximo ciclo (ex: 10 minutos)
-                await asyncio.sleep(settings.SCHEDULER_LOOP_INTERVAL)
+                await asyncio.sleep(settings_module.SCHEDULER_LOOP_INTERVAL)
             except Exception as e:
                 logger.error(f"Erro no loop do scheduler: {str(e)}")
                 await asyncio.sleep(60)
