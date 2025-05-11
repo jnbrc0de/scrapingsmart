@@ -60,7 +60,7 @@ class SmartScheduler:
             self.active_sessions: Dict[str, BrowserSession] = {}
             self.domain_cooldowns: Dict[str, datetime] = {}
             self.processing_locks: Set[str] = set()
-            self.semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_DOMAINS)
+            self.semaphore = asyncio.Semaphore(settings.scraping.max_concurrent)
             self._setup_logging()
         except Exception as e:
             logger.error(f"Failed to initialize scheduler: {str(e)}")
