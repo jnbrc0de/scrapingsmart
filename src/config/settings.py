@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from loguru import logger
 from datetime import timedelta
 from playwright.sync_api import sync_playwright
-from pydantic import BaseModel, Field, BaseSettings
+from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
