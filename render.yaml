@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: scrapingsmart
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install
+    startCommand: python playwright_proxy_test.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: NODE_VERSION
+        value: 16.0.0 

@@ -1,1 +1,1 @@
-web: python playwright_proxy_test.py 
+web: gunicorn playwright_proxy_test:app 
