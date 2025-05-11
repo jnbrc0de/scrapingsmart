@@ -16,3 +16,4 @@ psutil
 elasticsearch
 gunicorn==21.2.0
 pytest==7.4.0 
+pydantic-settings>=2.0.0
