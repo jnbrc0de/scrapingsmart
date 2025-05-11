@@ -71,9 +71,9 @@ class SmartScheduler:
         try:
             logger.add(
                 "logs/scheduler_{time}.log",
-                rotation=settings.LOG_ROTATION_SIZE,
-                retention=f"{settings.LOG_RETENTION_DAYS} days",
-                level=settings.LOG_LEVEL,
+                rotation=settings.log_rotation_size,
+                retention=f"{settings.log_retention_days} days",
+                level=settings.log_level,
                 format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
             )
         except Exception as e:
