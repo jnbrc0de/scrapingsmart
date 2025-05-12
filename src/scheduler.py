@@ -83,7 +83,7 @@ class SmartScheduler:
     async def load_monitored_urls(self) -> List[URLMetadata]:
         """Load active URLs from Supabase with proper filtering."""
         try:
-            response = await self.supabase.table("monitored_urls") \
+            response = self.supabase.table("monitored_urls") \
                 .select("*") \
                 .in_("status", ["active", "warning"]) \
                 .lte("next_scrape_at", datetime.utcnow().isoformat()) \
