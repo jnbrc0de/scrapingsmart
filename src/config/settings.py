@@ -248,6 +248,10 @@ class ScrapingSettings(BaseModel):
     batch_size: int = Field(default=10, description="Tamanho do lote de URLs processadas")
     user_agent: str = Field(default="Mozilla/5.0", description="User-Agent padrão para scraping")
 
+class ResourcesSettings(BaseModel):
+    max_cpu_usage: float = Field(default=0.8, description="Uso máximo de CPU (fração, ex: 0.8 para 80%)")
+    max_ram_mb: int = Field(default=2048, description="Uso máximo de RAM em MB")
+
 class Settings(BaseSettings):
     SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
     SUPABASE_KEY: str = Field(..., env="SUPABASE_KEY")
@@ -256,6 +260,7 @@ class Settings(BaseSettings):
     log_rotation_size: str = Field(default="100 MB", env="LOG_ROTATION_SIZE")
     log_retention_days: int = Field(default=7, env="LOG_RETENTION_DAYS")
     scraping: ScrapingSettings = ScrapingSettings()
+    resources: ResourcesSettings = ResourcesSettings()
     # Futuras seções: database, security, etc.
 
     class Config:
