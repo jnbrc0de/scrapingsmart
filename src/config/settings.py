@@ -241,6 +241,7 @@ class LoggingConfig:
 
 class ScrapingSettings(BaseModel):
     max_concurrent: int = Field(default=10, description="Número máximo de domínios concorrentes")
+    request_timeout: int = Field(default=30, description="Timeout das requisições de scraping em segundos")
 
 class Settings(BaseSettings):
     SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
