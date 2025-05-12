@@ -245,11 +245,12 @@ class ScrapingSettings(BaseModel):
     max_retries: int = Field(default=3, description="Número máximo de tentativas de scraping por URL")
     interval_base: int = Field(default=21600, description="Intervalo base entre scrapes em segundos (6h)")
     interval_jitter: int = Field(default=1800, description="Jitter do intervalo em segundos (30min)")
-    batch_size: int = Field(default=10, description="Tamanho do lote de URLs processadas")
+    batch_size: int = Field(default=10, description="Tamanho do lote de URLs processadas por domínio")
+    loop_interval: int = Field(default=600, description="Intervalo do loop principal do scheduler em segundos (10min)")
     user_agent: str = Field(default="Mozilla/5.0", description="User-Agent padrão para scraping")
 
 class ResourcesSettings(BaseModel):
-    max_cpu_usage: float = Field(default=0.8, description="Uso máximo de CPU (fração, ex: 0.8 para 80%)")
+    max_cpu_usage: float = Field(default=90.0, description="Uso máximo de CPU em porcentagem")
     max_ram_mb: int = Field(default=2048, description="Uso máximo de RAM em MB")
 
 class Settings(BaseSettings):

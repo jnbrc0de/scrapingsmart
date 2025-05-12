@@ -340,7 +340,7 @@ class SmartScheduler:
                 urls = await self.load_monitored_urls()
                 await self.schedule_urls(urls)
                 # Aguarda até o próximo ciclo (ex: 10 minutos)
-                await asyncio.sleep(settings.SCHEDULER_LOOP_INTERVAL)
+                await asyncio.sleep(settings.scraping.loop_interval)
             except Exception as e:
                 logger.error(f"Erro no loop do scheduler: {str(e)}")
                 await asyncio.sleep(60)
