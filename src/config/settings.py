@@ -242,11 +242,19 @@ class LoggingConfig:
 class ScrapingSettings(BaseModel):
     max_concurrent: int = Field(default=10, description="Número máximo de domínios concorrentes")
     request_timeout: int = Field(default=30, description="Timeout das requisições de scraping em segundos")
+    max_retries: int = Field(default=3, description="Número máximo de tentativas de scraping por URL")
+    interval_base: int = Field(default=21600, description="Intervalo base entre scrapes em segundos (6h)")
+    interval_jitter: int = Field(default=1800, description="Jitter do intervalo em segundos (30min)")
+    batch_size: int = Field(default=10, description="Tamanho do lote de URLs processadas")
+    user_agent: str = Field(default="Mozilla/5.0", description="User-Agent padrão para scraping")
 
 class Settings(BaseSettings):
     SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
     SUPABASE_KEY: str = Field(..., env="SUPABASE_KEY")
     PROXY_URL: Optional[str] = Field(None, env="PROXY_URL")
+    log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    log_rotation_size: str = Field(default="100 MB", env="LOG_ROTATION_SIZE")
+    log_retention_days: int = Field(default=7, env="LOG_RETENTION_DAYS")
     scraping: ScrapingSettings = ScrapingSettings()
     # Futuras seções: database, security, etc.
 
