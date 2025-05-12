@@ -245,6 +245,7 @@ class ScrapingSettings(BaseModel):
 class Settings(BaseSettings):
     SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
     SUPABASE_KEY: str = Field(..., env="SUPABASE_KEY")
+    PROXY_URL: Optional[str] = Field(None, env="PROXY_URL")
     scraping: ScrapingSettings = ScrapingSettings()
     # Futuras seções: database, security, etc.
 
@@ -260,7 +261,7 @@ settings = Settings()
 # Export commonly used settings for convenience
 SUPABASE_URL = settings.SUPABASE_URL
 SUPABASE_KEY = settings.SUPABASE_KEY
-PROXY_URL = settings.get_proxy_url()
+PROXY_URL = settings.PROXY_URL
 MAX_CONCURRENT_SCRAPES = settings.scraping.max_concurrent
 REQUEST_TIMEOUT = settings.scraping.request_timeout
 MAX_RETRIES = settings.scraping.max_retries
