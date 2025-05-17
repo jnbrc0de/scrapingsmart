@@ -8,7 +8,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
-from config.settings import settings
+import os
+from src.config.settings import settings
 from .logger import centralized_logger
 
 logger = logging.getLogger(__name__)
@@ -41,13 +42,13 @@ class Alert:
 class AlertManager:
     def __init__(self):
         self.email_config = {
-            "host": settings.monitoring.email_host,
-            "port": settings.monitoring.email_port,
-            "username": settings.monitoring.email_username,
-            "password": settings.monitoring.email_password,
-            "recipients": settings.monitoring.email_recipients
+            "host": os.getenv("EMAIL_HOST", ""),
+            "port": int(os.getenv("EMAIL_PORT", "0")),
+            "username": os.getenv("EMAIL_USERNAME", ""),
+            "password": os.getenv("EMAIL_PASSWORD", ""),
+            "recipients": os.getenv("EMAIL_RECIPIENTS", "").split(",") if os.getenv("EMAIL_RECIPIENTS") else []
         }
-        self.slack_webhook = settings.monitoring.slack_webhook
+        self.slack_webhook = os.getenv("SLACK_WEBHOOK", None)
         self.alert_cooldown = {}  # Para evitar spam de alertas
         self.rules: List[AlertRule] = []
         self.alerts: List[Alert] = []

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict
 from supabase import create_client, Client
 from loguru import logger
-from config.settings import settings
+from src.config.settings import settings
 
 class RefreshTokenManager:
     def __init__(self):

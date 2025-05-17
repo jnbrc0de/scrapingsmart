@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import jwt
 from typing import Dict, Optional
 from loguru import logger
-from config.settings import settings
+from src.config.settings import settings
 
 class JWTManager:
     def __init__(self):

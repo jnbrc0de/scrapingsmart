@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from supabase import create_client, Client
 from loguru import logger
-from config.settings import settings
+from src.config.settings import settings
 from datetime import datetime, timedelta
 
 class RoleManager:

@@ -11,7 +11,7 @@ from queue import Queue
 import time
 import psutil
 import numpy as np
-from config.settings import settings
+from src.config.settings import settings
 from concurrent.futures import ThreadPoolExecutor
 import weakref
 

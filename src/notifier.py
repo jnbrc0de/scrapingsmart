@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from loguru import logger
 from playwright.async_api import Page
-from config.settings import settings
+from src.config.settings import settings
 
 class AlertLevel(Enum):
     INFO = "info"
@@ -379,6 +379,21 @@ class AlertNotifier:
             
         except Exception as e:
             logger.error(f"Error saving page context: {str(e)}")
+
+class Notifier:
+    """Classe simples para notificações durante testes."""
+    
+    async def send_alert(self, level: str, message: str, details: Optional[Dict[str, Any]] = None):
+        """Envia um alerta para o log."""
+        logger.log(level.upper(), f"{message} - Detalhes: {details}")
+        
+    async def send_metric(self, name: str, value: float, tags: Optional[Dict[str, str]] = None):
+        """Registra uma métrica no log."""
+        logger.info(f"Métrica: {name} = {value} - Tags: {tags}")
+        
+    async def send_event(self, event_type: str, data: Dict[str, Any]):
+        """Registra um evento no log."""
+        logger.info(f"Evento: {event_type} - Dados: {data}")
 
 if __name__ == "__main__":
     # Example usage

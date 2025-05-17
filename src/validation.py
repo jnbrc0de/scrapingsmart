@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from datetime import datetime
 import logging
-from config.settings import MIN_CONFIDENCE_THRESHOLD
+from src.config.settings import MIN_CONFIDENCE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

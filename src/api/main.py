@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 from supabase import create_client
-from config.settings import settings
+from src.config.settings import settings
 
 app = FastAPI(title="Scraping API")
 
@@ -32,6 +32,7 @@ def list_urls():
 @app.post("/urls", response_model=URLOut)
 def add_url(url_in: URLIn):
     data = url_in.dict()
+    data["url"] = str(data["url"])
     data["status"] = "active"
     resp = supabase.table("monitored_urls").insert(data).execute()
     if not resp.data:

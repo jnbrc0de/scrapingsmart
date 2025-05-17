@@ -5,8 +5,9 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from loguru import logger
 from playwright.async_api import Page
-from config.settings import settings
+from src.config.settings import settings
 from bs4 import BeautifulSoup
+from src.strategy_manager import StrategyManager
 
 @dataclass
 class ExtractionStrategy:
@@ -63,6 +64,7 @@ class PriceExtractor:
         self.notifier = notifier
         self.strategies: Dict[str, List[ExtractionStrategy]] = {}
         self.domain_error_counts: Dict[str, int] = {}
+        self.strategy_manager = StrategyManager()
         self._setup_logging()
 
     def _setup_logging(self):
@@ -431,6 +433,188 @@ class PriceExtractor:
             logger.error(f"Error generating strategy variants: {str(e)}")
             return []
 
+class Extractor:
+    def __init__(self):
+        """Inicializa o extrator com o gerenciador de estratégias."""
+        self.strategy_manager = StrategyManager()
+        logger.info("Extractor inicializado com sucesso")
+
+    async def extract(self, html: str, url: str) -> Dict[str, Any]:
+        """
+        Extrai dados de uma página HTML usando o sistema adaptativo.
+        
+        Args:
+            html: Conteúdo HTML da página
+            url: URL da página sendo processada
+            
+        Returns:
+            Dict com os dados extraídos
+        """
+        try:
+            start_time = datetime.now()
+            logger.info(f"Iniciando extração para URL: {url}")
+            
+            # Parse do HTML
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Obtém estratégias para o domínio
+            domain = self._extract_domain(url)
+            strategies = await self.strategy_manager.get_strategies(domain)
+            
+            # Tenta cada estratégia em ordem de prioridade
+            for strategy in strategies:
+                try:
+                    result = await self._apply_strategy(soup, strategy)
+                    
+                    if result and self._validate_result(result):
+                        # Atualiza métricas de sucesso
+                        await self.strategy_manager.update_success(strategy['id'])
+                        
+                        # Adiciona metadados
+                        result.update({
+                            'strategy_used': strategy['type'],
+                            'confidence_score': strategy['confidence'],
+                            'extraction_time': (datetime.now() - start_time).total_seconds()
+                        })
+                        
+                        logger.success(f"Extração bem sucedida usando estratégia: {strategy['type']}")
+                        return result
+                        
+                except Exception as e:
+                    logger.warning(f"Falha na estratégia {strategy['type']}: {str(e)}")
+                    await self.strategy_manager.update_failure(strategy['id'])
+                    continue
+            
+            # Se nenhuma estratégia funcionou, tenta extração genérica
+            logger.info("Tentando extração genérica...")
+            result = await self._generic_extraction(soup)
+            
+            if result:
+                result.update({
+                    'strategy_used': 'generic',
+                    'confidence_score': 0.5,
+                    'extraction_time': (datetime.now() - start_time).total_seconds()
+                })
+                return result
+            
+            raise Exception("Nenhuma estratégia de extração funcionou")
+            
+        except Exception as e:
+            logger.error(f"Erro na extração: {str(e)}")
+            raise
+
+    async def _apply_strategy(self, soup: BeautifulSoup, strategy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Aplica uma estratégia específica de extração."""
+        strategy_type = strategy['type']
+        strategy_data = strategy['data']
+        
+        if strategy_type == 'regex':
+            return await self._extract_with_regex(soup, strategy_data)
+        elif strategy_type == 'css':
+            return await self._extract_with_css(soup, strategy_data)
+        elif strategy_type == 'xpath':
+            return await self._extract_with_xpath(soup, strategy_data)
+        elif strategy_type == 'semantic':
+            return await self._extract_with_semantic(soup, strategy_data)
+        else:
+            raise ValueError(f"Tipo de estratégia desconhecido: {strategy_type}")
+
+    async def _extract_with_regex(self, soup: BeautifulSoup, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extrai dados usando expressões regulares."""
+        text = soup.get_text()
+        pattern = data['pattern']
+        flags = data.get('flags', 0)
+        
+        match = re.search(pattern, text, flags)
+        if match:
+            return {'price': float(match.group(1).replace(',', '.'))}
+        return None
+
+    async def _extract_with_css(self, soup: BeautifulSoup, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extrai dados usando seletores CSS."""
+        selector = data['selector']
+        element = soup.select_one(selector)
+        
+        if element:
+            price_text = element.get_text().strip()
+            price = self._extract_price_from_text(price_text)
+            if price:
+                return {'price': price}
+        return None
+
+    async def _extract_with_xpath(self, soup: BeautifulSoup, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extrai dados usando XPath."""
+        # Implementação do XPath será adicionada se necessário
+        return None
+
+    async def _extract_with_semantic(self, soup: BeautifulSoup, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extrai dados usando atributos semânticos."""
+        attributes = data['attributes']
+        
+        for attr in attributes:
+            element = soup.find(attrs={attr: True})
+            if element:
+                price_text = element.get_text().strip()
+                price = self._extract_price_from_text(price_text)
+                if price:
+                    return {'price': price}
+        return None
+
+    async def _generic_extraction(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
+        """Tenta extração genérica quando outras estratégias falham."""
+        # Procura por elementos comuns de preço
+        price_elements = soup.find_all(['span', 'div', 'p'], class_=re.compile(r'price|valor|preco', re.I))
+        
+        for element in price_elements:
+            price_text = element.get_text().strip()
+            price = self._extract_price_from_text(price_text)
+            if price:
+                return {'price': price}
+        
+        return None
+
+    def _extract_price_from_text(self, text: str) -> Optional[float]:
+        """Extrai preço de um texto."""
+        # Remove caracteres não numéricos exceto ponto e vírgula
+        text = re.sub(r'[^\d.,]', '', text)
+        
+        # Tenta diferentes formatos
+        patterns = [
+            r'(\d+[.,]\d{2})',  # 99,90 ou 99.90
+            r'(\d+)',          # 99
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                price_str = match.group(1).replace(',', '.')
+                try:
+                    return float(price_str)
+                except ValueError:
+                    continue
+        
+        return None
+
+    def _validate_result(self, result: Dict[str, Any]) -> bool:
+        """Valida se o resultado da extração é válido."""
+        if 'price' not in result:
+            return False
+            
+        price = result['price']
+        if not isinstance(price, (int, float)):
+            return False
+            
+        if price <= 0 or price > 1000000:  # Limites razoáveis para preços
+            return False
+            
+        return True
+
+    def _extract_domain(self, url: str) -> str:
+        """Extrai o domínio de uma URL."""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return parsed.netloc
+
 def extract_price(html: str, url: str) -> float:
     """
     Extrai o preço do HTML usando múltiplas estratégias (regex, CSS, heurística).
@@ -481,7 +665,6 @@ if __name__ == "__main__":
         
         # Generate variants
         variants = await extractor.generate_strategy_variants(strategy)
-        print(f"Generated {len(variants)} variants")
     
     import asyncio
     asyncio.run(main())

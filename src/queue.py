@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 import heapq
 from loguru import logger
-from config.settings import settings
+from src.config.settings import settings
 
 @dataclass
 class QueueItem:
@@ -80,7 +80,6 @@ class ScrapingQueue:
             
             # Add to priority queue
             heapq.heappush(self.priority_queue, item)
-            logger.debug(f"Added {item.url} to queue with priority {item.priority_score}")
 
     async def _calculate_priority_score(self, item: QueueItem) -> float:
         """Calculate priority score based on multiple factors."""

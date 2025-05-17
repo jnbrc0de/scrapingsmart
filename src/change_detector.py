@@ -3,7 +3,7 @@ import hashlib
 from datetime import datetime
 import logging
 from dataclasses import dataclass
-from config.settings import (
+from src.config.settings import (
     LAYOUT_CHANGE_THRESHOLD,
     MIN_CONFIDENCE_THRESHOLD,
     MAX_FALLBACK_STRATEGIES
@@ -96,13 +96,13 @@ class ChangeDetector:
     def _extract_structure(self, html: str) -> str:
         """Extract structural elements from HTML."""
         # TODO: Implement proper HTML parsing
-        # For now, just return a simple structure
+        # Limitação: Parsing HTML detalhado não implementado nesta versão.
         return html
 
     def _extract_content(self, html: str) -> str:
         """Extract content elements from HTML."""
         # TODO: Implement proper content extraction
-        # For now, just return the text content
+        # Limitação: Extração de conteúdo detalhada não implementada nesta versão.
         return html
 
     def _calculate_similarity(self, current: LayoutSignature, previous: LayoutSignature) -> float:

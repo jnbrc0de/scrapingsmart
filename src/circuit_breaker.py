@@ -1,9 +1,12 @@
+class CircuitOpenError(Exception):
+    pass
+
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import asyncio
 from dataclasses import dataclass
 import logging
-from config.settings import (
+from src.config.settings import (
     CIRCUIT_BREAKER_THRESHOLD,
     CIRCUIT_BREAKER_WINDOW,
     CIRCUIT_BREAKER_HALF_OPEN_TIMEOUT,

@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 from bs4 import BeautifulSoup
 import re
-from config.settings import (
+from src.config.settings import (
     MIN_CONFIDENCE_THRESHOLD,
     MAX_FALLBACK_STRATEGIES
 )
@@ -23,7 +23,6 @@ class Strategy:
 
 class StrategyGenerator:
     def __init__(self):
-        self.strategies: Dict[str, List[Strategy]] = {}
         self.success_patterns: Dict[str, List[Dict]] = {}
         self._setup_logging()
 
@@ -46,28 +45,21 @@ class StrategyGenerator:
             'details': []
         }
 
-        if domain not in self.strategies:
-            return False, changes
-
         current_soup = BeautifulSoup(html, 'html.parser')
         current_structure = self._extract_structure(current_soup)
         current_content = self._extract_content(current_soup)
 
-        # Check each strategy
-        for strategy in self.strategies[domain]:
-            old_soup = BeautifulSoup(strategy.context.get('last_html', ''), 'html.parser')
-            if not old_soup:
-                continue
-
-            old_structure = self._extract_structure(old_soup)
-            old_content = self._extract_content(old_soup)
+        # Compare with last known structure
+        if domain in self.success_patterns:
+            last_pattern = self.success_patterns[domain][-1]
+            old_structure = last_pattern.get('structure', {})
+            old_content = last_pattern.get('content', {})
 
             # Compare structure
             if current_structure != old_structure:
                 changes['structure_changed'] = True
                 changes['details'].append({
                     'type': 'structure',
-                    'strategy': strategy.name,
                     'diff': self._compare_structures(current_structure, old_structure)
                 })
 
@@ -76,20 +68,8 @@ class StrategyGenerator:
                 changes['content_changed'] = True
                 changes['details'].append({
                     'type': 'content',
-                    'strategy': strategy.name,
                     'diff': self._compare_contents(current_content, old_content)
                 })
-
-            # Check selectors
-            for selector_type, selector in strategy.selectors.items():
-                if not current_soup.select(selector):
-                    changes['selectors_changed'] = True
-                    changes['details'].append({
-                        'type': 'selector',
-                        'strategy': strategy.name,
-                        'selector': selector,
-                        'reason': 'Selector no longer matches any elements'
-                    })
 
         return any([changes['structure_changed'], changes['content_changed'], changes['selectors_changed']]), changes
 
@@ -119,18 +99,12 @@ class StrategyGenerator:
             }
         )
 
-        # Store strategy
-        if domain not in self.strategies:
-            self.strategies[domain] = []
-        self.strategies[domain].append(strategy)
-
-        # Keep only the most recent strategies
-        if len(self.strategies[domain]) > MAX_FALLBACK_STRATEGIES:
-            self.strategies[domain].pop(0)
+        # Update success patterns
+        self._update_success_patterns(domain, strategy, True)
 
         return strategy
 
-    def update_success_patterns(self, domain: str, strategy: Strategy, success: bool) -> None:
+    def _update_success_patterns(self, domain: str, strategy: Strategy, success: bool) -> None:
         """Update success patterns based on strategy performance."""
         if domain not in self.success_patterns:
             self.success_patterns[domain] = []
@@ -141,22 +115,14 @@ class StrategyGenerator:
             self.success_patterns[domain].append({
                 'patterns': patterns,
                 'timestamp': datetime.now(),
-                'confidence': strategy.confidence
+                'confidence': strategy.confidence,
+                'structure': self._extract_structure(BeautifulSoup(strategy.context['last_html'], 'html.parser')),
+                'content': self._extract_content(BeautifulSoup(strategy.context['last_html'], 'html.parser'))
             })
 
             # Keep only recent patterns
             if len(self.success_patterns[domain]) > 10:
                 self.success_patterns[domain].pop(0)
-
-    def get_best_strategy(self, domain: str) -> Optional[Strategy]:
-        """Get the best performing strategy for a domain."""
-        if domain not in self.strategies or not self.strategies[domain]:
-            return None
-
-        return max(
-            self.strategies[domain],
-            key=lambda s: (s.success_rate * s.confidence)
-        )
 
     def _extract_structure(self, soup: BeautifulSoup) -> Dict:
         """Extract structural elements from HTML."""

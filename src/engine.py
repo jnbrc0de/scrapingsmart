@@ -6,14 +6,13 @@ from typing import Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 from loguru import logger
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-from config.settings import settings
+from src.config.settings import settings
 from urllib.parse import urlparse
-from .circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.circuit_breaker import DomainCircuitBreaker, CircuitOpenError
 from .browser.manager import BrowserManager
-from .extractor import Extractor
+from src.extractor import PriceExtractor
 from .db import Database
-from .monitoring.apm import APMManager
-from .monitoring.alerts import AlertManager
+from .alert.manager import AlertManager
 
 @dataclass
 class ScrapeResult:
@@ -33,19 +32,14 @@ class ScrapingEngine:
     """
     Engine principal de scraping assíncrono, usando Playwright, extractor e integração com DB.
     """
-    def __init__(self, config):
-        self.config = config
-        self.browser_manager = BrowserManager(config)
-        self.extractor = Extractor(config)
-        self.db = Database(config)
-        self.apm = APMManager(config)
-        self.alert_manager = AlertManager(config)
-        self.circuit_breaker = CircuitBreaker(
-            failure_threshold=config.get('circuit_breaker_failure_threshold', 5),
-            recovery_timeout=config.get('circuit_breaker_recovery_timeout', 60),
-            half_open_timeout=config.get('circuit_breaker_half_open_timeout', 30),
-            success_threshold=config.get('circuit_breaker_success_threshold', 2)
-        )
+    def __init__(self, config=None, notifier=None):
+        self.config = config or settings
+        self.notifier = notifier
+        self.browser_manager = BrowserManager(config=self.config, notifier=self.notifier)
+        self.db = Database(config=self.config)
+        self.alert_manager = AlertManager(notifier=self.notifier)
+        self.extractor = PriceExtractor(db=self.db, notifier=self.notifier)
+        self.circuit_breaker = DomainCircuitBreaker()
         self.domain_timeouts: Dict[str, float] = {}
         self.domain_error_counts: Dict[str, int] = {}
         self._setup_logging()
@@ -53,10 +47,10 @@ class ScrapingEngine:
     def _setup_logging(self):
         """Configure logging with loguru."""
         logger.add(
-            "logs/engine_{time}.log",
-            rotation=settings.LOG_ROTATION_SIZE,
-            retention=f"{settings.LOG_RETENTION_DAYS} days",
-            level=settings.LOG_LEVEL,
+            str(self.config.LOG_DIR / "engine_{time}.log"),
+            rotation=self.config.LOG_ROTATION_SIZE,
+            retention=f"{self.config.LOG_RETENTION_DAYS} days",
+            level=self.config.LOG_LEVEL,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
         )
 
@@ -64,14 +58,14 @@ class ScrapingEngine:
         """Get adaptive timeout for domain based on historical performance."""
         if domain in self.domain_timeouts:
             return self.domain_timeouts[domain]
-        return settings.DEFAULT_TIMEOUT
+        return self.config.DEFAULT_TIMEOUT
 
     async def _update_domain_timeout(self, domain: str, processing_time: float):
         """Update domain timeout based on processing time."""
         current_timeout = await self._get_domain_timeout(domain)
         # Exponential moving average with 0.3 weight for new values
         new_timeout = current_timeout * 0.7 + processing_time * 1.5 * 0.3
-        self.domain_timeouts[domain] = min(new_timeout, settings.MAX_TIMEOUT)
+        self.domain_timeouts[domain] = min(new_timeout, self.config.MAX_TIMEOUT)
 
     async def _simulate_human_behavior(self, page: Page):
         """Simulate realistic human behavior on the page."""
@@ -156,98 +150,70 @@ class ScrapingEngine:
         
         return True, "warning"
 
-    async def scrape(self, url: str) -> Dict:
+    async def scrape(self, url: str, browser: Browser) -> Dict:
         """
         Executa o scraping de uma URL com proteção do circuit breaker.
         """
         domain = urlparse(url).netloc
         start_time = time.time()
-        
-        with self.apm.start_span("scrape", {"url": url, "domain": domain}) as span:
-            try:
-                result = await self.circuit_breaker.execute(
-                    domain,
-                    self._scrape_with_recovery,
-                    url
-                )
-                
-                # Record metrics
-                processing_time = time.time() - start_time
-                self.apm.record_metric(
-                    "scrape_duration",
-                    processing_time,
-                    {"domain": domain, "success": True}
-                )
-                
-                # Check for alerts
-                await self.alert_manager.check_metrics({
-                    "latency": processing_time,
-                    "domain": domain
-                })
-                
-                return result
-                
-            except CircuitOpenError as e:
-                self.apm.record_error(e, {"url": url, "domain": domain})
-                logger.warning(f"Circuit breaker open for {domain}: {e}")
-                raise
-                
-            except Exception as e:
-                self.apm.record_error(e, {"url": url, "domain": domain})
-                logger.error(f"Error scraping {url}: {e}")
-                raise
+        try:
+            result = await self.circuit_breaker.execute(
+                domain,
+                self._scrape_with_recovery,
+                url,
+                browser
+            )
+            # Record metrics (apenas logging local)
+            processing_time = time.time() - start_time
+            await self.alert_manager.check_metrics({
+                "latency": processing_time,
+                "domain": domain
+            })
+            return result
+        except CircuitOpenError as e:
+            logger.warning(f"Circuit breaker open for {domain}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error scraping {url}: {e}")
+            raise
 
-    async def _scrape_with_recovery(self, url: str) -> Dict:
+    async def _scrape_with_recovery(self, url: str, browser: Browser) -> Dict:
         """
         Executa o scraping com recuperação de sessão.
         """
         domain = urlparse(url).netloc
         max_retries = self.config.get('max_retries', 3)
-        
-        with self.apm.start_span("scrape_with_recovery", {"url": url, "domain": domain}) as span:
-            for attempt in range(max_retries):
-                try:
-                    # Tenta recuperar sessão existente
-                    if attempt > 0:
-                        await self.browser_manager.recover_session(domain)
-                    
-                    # Obtém página
-                    page = await self.browser_manager.get_page(domain)
-                    
-                    # Navega para URL
-                    await page.goto(url, wait_until='networkidle')
-                    
-                    # Extrai dados
-                    data = await self.extractor.extract(page)
-                    
-                    # Salva sessão para recuperação futura
-                    await self.browser_manager.save_session(domain)
-                    
-                    return data
-                    
-                except Exception as e:
-                    self.apm.record_error(e, {
-                        "url": url,
-                        "domain": domain,
-                        "attempt": attempt + 1
-                    })
-                    
-                    logger.error(f"Attempt {attempt + 1} failed for {url}: {e}")
-                    
-                    if attempt == max_retries - 1:
-                        raise
-                    
-                    # Lida com crash do navegador
-                    await self.browser_manager.handle_crash(domain)
-                    
-                    # Espera antes de tentar novamente
-                    await asyncio.sleep(2 ** attempt)
+        for attempt in range(max_retries):
+            try:
+                # Tenta recuperar sessão existente
+                if attempt > 0:
+                    await self.browser_manager.recover_session(domain)
+                # Obtém página
+                page = await self.browser_manager.get_page(domain)
+                # Navega para URL
+                await page.goto(url, wait_until='networkidle')
+                # Extrai dados
+                data = await self.extractor.extract_price_data(page)
+                # Salva sessão para recuperação futura
+                await self.browser_manager.save_session(domain)
+                return {
+                    'status': 'success',
+                    'page': page,
+                    'data': data.__dict__
+                }
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed for {url}: {e}")
+                if attempt == max_retries - 1:
+                    return {
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
     async def cleanup(self):
         """Limpa recursos do engine."""
         await self.browser_manager.cleanup()
         await self.db.close()
-        await self.apm.cleanup()
         await self.alert_manager.cleanup()
 
     async def get_metrics(self, domain: str) -> Dict:
@@ -257,10 +223,6 @@ class ScrapingEngine:
             'circuit_breaker': circuit_metrics,
             'browser': {
                 'has_session': domain in self.browser_manager._sessions
-            },
-            'apm': {
-                'spans': self.apm.get_spans(domain),
-                'errors': self.apm.get_errors(domain)
             },
             'alerts': {
                 'active': self.alert_manager.get_active_alerts(),
@@ -288,6 +250,5 @@ if __name__ == "__main__":
         
         # Test scraping
         result = await engine.scrape(url)
-        print(f"Scraping result: {result}")
     
     asyncio.run(main())

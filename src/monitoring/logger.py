@@ -4,11 +4,18 @@ import json
 from datetime import datetime
 from typing import Dict, Any
 from elasticsearch import Elasticsearch
-from config.settings import settings
+from src.config.settings import settings
 
 class CentralizedLogger:
     def __init__(self):
-        self.es = Elasticsearch(settings.ELASTICSEARCH_URL)
+        self.es = None
+        self.elasticsearch_enabled = False
+        if hasattr(settings, 'ELASTICSEARCH_URL') and getattr(settings, 'ELASTICSEARCH_URL'):
+            try:
+                self.es = Elasticsearch(getattr(settings, 'ELASTICSEARCH_URL'))
+                self.elasticsearch_enabled = True
+            except Exception as e:
+                logger.warning(f"Elasticsearch not initialized: {e}")
         self._setup_logger()
 
     def _setup_logger(self):
@@ -20,7 +27,7 @@ class CentralizedLogger:
         logger.add(
             sys.stdout,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            level="INFO"
+            level="INFO"  # Em produção, use INFO ou WARNING. Não registre dados sensíveis!
         )
 
         # Adiciona handler para arquivo
@@ -32,15 +39,18 @@ class CentralizedLogger:
             level="DEBUG"
         )
 
-        # Adiciona handler para Elasticsearch
-        logger.add(
-            self._log_to_elasticsearch,
-            format="{message}",
-            level="INFO"
-        )
+        # Adiciona handler para Elasticsearch se habilitado
+        if self.elasticsearch_enabled:
+            logger.add(
+                self._log_to_elasticsearch,
+                format="{message}",
+                level="INFO"
+            )
 
     def _log_to_elasticsearch(self, message: Dict[str, Any]):
         """Envia logs para o Elasticsearch."""
+        if not self.elasticsearch_enabled or not self.es:
+            return
         try:
             log_entry = {
                 "timestamp": datetime.utcnow(),
@@ -49,7 +59,7 @@ class CentralizedLogger:
                 "module": message["name"],
                 "function": message["function"],
                 "line": message["line"],
-                "environment": settings.ENVIRONMENT
+                "environment": getattr(settings, 'ENVIRONMENT', 'unknown')
             }
             self.es.index(index=f"logs-{datetime.utcnow().strftime('%Y.%m.%d')}", body=log_entry)
         except Exception as e:

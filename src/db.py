@@ -4,13 +4,32 @@ import time
 import asyncio
 import backoff
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Callable, TypeVar, cast
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, wraps
 from loguru import logger
 from supabase import create_client, Client
 from pydantic import BaseModel, HttpUrl, validator
-from config.settings import settings
+from src.config.settings import settings
+
+T = TypeVar('T')
+
+def timed_lru_cache(seconds: int, maxsize: int = 128):
+    """Cache decorator with TTL."""
+    def wrapper_decorator(func: Callable[..., T]) -> Callable[..., T]:
+        func = lru_cache(maxsize=maxsize)(func)
+        func.lifetime = seconds
+        func.expiration = time.time() + seconds
+
+        @wraps(func)
+        def wrapped_func(*args: Any, **kwargs: Any) -> T:
+            if time.time() >= func.expiration:
+                func.cache_clear()
+                func.expiration = time.time() + func.lifetime
+            return func(*args, **kwargs)
+
+        return cast(Callable[..., T], wrapped_func)
+    return wrapper_decorator
 
 # Pydantic models for data validation
 class MonitoredUrl(BaseModel):
@@ -72,69 +91,166 @@ class RateLimitError(DatabaseError):
     pass
 
 class Database:
-    def __init__(self):
-        """Initialize database connection with retry logic."""
-        self.client = self._init_connection()
-        self._validate_schema()
+    """Gerencia conexão e operações com o banco de dados Supabase."""
+    
+    def __init__(self, config=None):
+        self.config = config or settings
         self._setup_logging()
+        self.client: Optional[Client] = None
+        self._init_connection()
         self._setup_cache()
 
     def _setup_logging(self):
         """Configure logging with loguru."""
         logger.add(
-            "logs/db_{time}.log",
-            rotation=settings.LOG_ROTATION_SIZE,
-            retention=f"{settings.LOG_RETENTION_DAYS} days",
-            level=settings.LOG_LEVEL,
+            str(self.config.LOG_DIR / "db_{time}.log"),
+            rotation=self.config.LOG_ROTATION_SIZE,
+            retention=f"{self.config.LOG_RETENTION_DAYS} days",
+            level=self.config.LOG_LEVEL,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
         )
-
-    @backoff.on_exception(
-        backoff.expo,
-        Exception,
-        max_tries=5,
-        max_time=30
-    )
-    def _init_connection(self) -> Client:
-        """Initialize Supabase connection with retry logic."""
+    
+    def _init_connection(self):
+        """Initialize connection to Supabase."""
         try:
-            client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-            # Test connection
-            client.table("meta_info").select("version").execute()
+            self.client = create_client(
+                self.config.SUPABASE_URL,
+                self.config.SUPABASE_KEY
+            )
             logger.info("Successfully connected to Supabase")
-            return client
         except Exception as e:
             logger.error(f"Failed to connect to Supabase: {str(e)}")
-            raise ConnectionError(f"Database connection failed: {str(e)}")
+            raise
+    
+    async def initialize(self):
+        """Initialize database connection."""
+        if not self.client:
+            self._init_connection()
+        logger.info("Database initialized")
+    
+    async def cleanup(self):
+        """Clean up database resources."""
+        self.client = None
+        logger.info("Database connection closed")
+    
+    async def save_price(self, data: Dict[str, Any]) -> Dict:
+        """Save price data to database."""
+        try:
+            result = self.client.table('prices').insert(data).execute()
+            logger.info(f"Price data saved: {data.get('product_id')}")
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Error saving price data: {str(e)}")
+            raise
+    
+    async def get_price_history(self, product_id: str, days: int = 30) -> List[Dict]:
+        """Get price history for a product."""
+        try:
+            result = self.client.table('prices')\
+                .select('*')\
+                .eq('product_id', product_id)\
+                .order('timestamp', desc=True)\
+                .limit(days)\
+                .execute()
+            return result.data
+        except Exception as e:
+            logger.error(f"Error getting price history: {str(e)}")
+            raise
+    
+    async def get_latest_price(self, product_id: str) -> Optional[Dict]:
+        """Get latest price for a product."""
+        try:
+            result = self.client.table('prices')\
+                .select('*')\
+                .eq('product_id', product_id)\
+                .order('timestamp', desc=True)\
+                .limit(1)\
+                .execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Error getting latest price: {str(e)}")
+            raise
+    
+    async def save_error(self, data: Dict[str, Any]) -> Dict:
+        """Save error data to database."""
+        try:
+            result = self.client.table('errors').insert(data).execute()
+            logger.info(f"Error data saved: {data.get('error_type')}")
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Error saving error data: {str(e)}")
+            raise
+    
+    async def get_error_stats(self, domain: str = None) -> Dict:
+        """Get error statistics."""
+        try:
+            query = self.client.table('errors').select('*')
+            if domain:
+                query = query.eq('domain', domain)
+            result = query.execute()
+            
+            errors = result.data
+            return {
+                'total': len(errors),
+                'by_type': self._group_by_type(errors),
+                'by_domain': self._group_by_domain(errors)
+            }
+        except Exception as e:
+            logger.error(f"Error getting error stats: {str(e)}")
+            raise
+    
+    def _group_by_type(self, errors: List[Dict]) -> Dict[str, int]:
+        """Group errors by type."""
+        groups = {}
+        for error in errors:
+            error_type = error.get('error_type', 'unknown')
+            groups[error_type] = groups.get(error_type, 0) + 1
+        return groups
+    
+    def _group_by_domain(self, errors: List[Dict]) -> Dict[str, int]:
+        """Group errors by domain."""
+        groups = {}
+        for error in errors:
+            domain = error.get('domain', 'unknown')
+            groups[domain] = groups.get(domain, 0) + 1
+        return groups
 
     def _setup_cache(self):
-        """Setup LRU cache for frequently accessed data."""
-        self._cache_urls = lru_cache(maxsize=1000, ttl=300)  # 5 minutes
-        self._cache_strategies = lru_cache(maxsize=100, ttl=1800)  # 30 minutes
+        """Setup cache for frequently accessed data."""
+        # Cache para URLs
+        @timed_lru_cache(seconds=300, maxsize=1000)
+        def cache_urls(key: str) -> Optional[Dict[str, Any]]:
+            return None
 
-    def _validate_schema(self):
-        """Validate database schema version."""
+        # Cache para estratégias
+        @timed_lru_cache(seconds=1800, maxsize=100)
+        def cache_strategies(key: str) -> Optional[List[Dict[str, Any]]]:
+            return None
+
+        self._cache_urls = cache_urls
+        self._cache_strategies = cache_strategies
+
+    async def get_extraction_strategies(self, domain: str) -> List[Dict[str, Any]]:
+        """Get extraction strategies for a domain."""
         try:
-            result = self.client.table("meta_info").select("version").execute()
-            current_version = result.data[0]["version"]
-            if current_version != settings.EXPECTED_SCHEMA_VERSION:
-                logger.warning(f"Schema version mismatch. Expected {settings.EXPECTED_SCHEMA_VERSION}, got {current_version}")
-                self._migrate_schema(current_version)
-        except Exception as e:
-            logger.error(f"Schema validation failed: {str(e)}")
-            raise DatabaseError(f"Schema validation failed: {str(e)}")
+            # Tentar obter do cache
+            cached = self._cache_strategies(domain)
+            if cached is not None:
+                return cached
 
-    def _migrate_schema(self, current_version: int):
-        """Migrate database schema to latest version."""
-        try:
-            # Implement schema migrations here
-            pass
+            # Se não estiver em cache, buscar do banco
+            result = await self.client.table("extraction_strategies")\
+                .select("*")\
+                .eq("domain", domain)\
+                .execute()
+            
+            # Atualizar cache
+            self._cache_strategies(domain)
+            return result.data
         except Exception as e:
-            logger.error(f"Schema migration failed: {str(e)}")
-            raise DatabaseError(f"Schema migration failed: {str(e)}")
+            logger.error(f"Error getting strategies: {str(e)}")
+            raise DatabaseError(f"Failed to get strategies: {str(e)}")
 
-    # Monitored URLs operations
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def add_url(self, url_data: Dict[str, Any]) -> str:
         """Add a new URL to monitor."""
         try:
@@ -142,7 +258,7 @@ class Database:
             url = MonitoredUrl(**url_data)
             
             # Insert into database
-            result = self.client.table("monitored_urls").insert(url.dict()).execute()
+            result = await self.client.table("monitored_urls").insert(url.dict()).execute()
             
             # Clear cache
             self._cache_urls.cache_clear()
@@ -152,61 +268,6 @@ class Database:
             logger.error(f"Error adding URL: {str(e)}")
             raise DatabaseError(f"Failed to add URL: {str(e)}")
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_urls_by_status(self, status: str) -> List[Dict[str, Any]]:
-        """Get URLs by status."""
-        try:
-            result = self.client.table("monitored_urls").select("*").eq("status", status).execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting URLs by status: {str(e)}")
-            raise DatabaseError(f"Failed to get URLs: {str(e)}")
-
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def update_url_status(self, url_id: str, status: str):
-        """Update URL status."""
-        try:
-            self.client.table("monitored_urls").update({"status": status}).eq("id", url_id).execute()
-            self._cache_urls.cache_clear()
-        except Exception as e:
-            logger.error(f"Error updating URL status: {str(e)}")
-            raise DatabaseError(f"Failed to update URL status: {str(e)}")
-
-    # Price history operations
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def insert_price_history_bulk(self, prices: List[Dict[str, Any]]):
-        """Insert multiple price records in bulk."""
-        try:
-            # Validate data
-            validated_prices = [PriceHistory(**price).dict() for price in prices]
-            
-            # Insert in batches
-            batch_size = 100
-            for i in range(0, len(validated_prices), batch_size):
-                batch = validated_prices[i:i + batch_size]
-                self.client.table("price_history").insert(batch).execute()
-                
-        except Exception as e:
-            logger.error(f"Error inserting price history: {str(e)}")
-            raise DatabaseError(f"Failed to insert price history: {str(e)}")
-
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_price_history(self, url_id: str, days: int = 30) -> List[Dict[str, Any]]:
-        """Get price history for a URL."""
-        try:
-            start_date = datetime.utcnow() - timedelta(days=days)
-            result = self.client.table("price_history")\
-                .select("*")\
-                .eq("url_id", url_id)\
-                .gte("timestamp", start_date.isoformat())\
-                .execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting price history: {str(e)}")
-            raise DatabaseError(f"Failed to get price history: {str(e)}")
-
-    # Scrape logs operations
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def log_scrape_attempt(self, log_data: Dict[str, Any]):
         """Log a scraping attempt."""
         try:
@@ -214,14 +275,25 @@ class Database:
             log = ScrapeLog(**log_data)
             
             # Insert into database
-            self.client.table("scrape_logs").insert(log.dict()).execute()
+            await self.client.table("scrape_logs").insert(log.dict()).execute()
             
         except Exception as e:
             logger.error(f"Error logging scrape attempt: {str(e)}")
             raise DatabaseError(f"Failed to log scrape attempt: {str(e)}")
 
-    # Extraction strategies operations
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    async def insert_price_history(self, price_data: Dict[str, Any]):
+        """Insert a price record."""
+        try:
+            # Validate data
+            price = PriceHistory(**price_data)
+            
+            # Insert into database
+            await self.client.table("price_history").insert(price.dict()).execute()
+            
+        except Exception as e:
+            logger.error(f"Error inserting price history: {str(e)}")
+            raise DatabaseError(f"Failed to insert price history: {str(e)}")
+
     async def upsert_extraction_strategy(self, strategy_data: Dict[str, Any]):
         """Insert or update an extraction strategy."""
         try:
@@ -229,7 +301,7 @@ class Database:
             strategy = ExtractionStrategy(**strategy_data)
             
             # Upsert into database
-            self.client.table("extraction_strategies")\
+            await self.client.table("extraction_strategies")\
                 .upsert(strategy.dict())\
                 .execute()
             
@@ -240,104 +312,11 @@ class Database:
             logger.error(f"Error upserting extraction strategy: {str(e)}")
             raise DatabaseError(f"Failed to upsert strategy: {str(e)}")
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_strategies_by_domain(self, domain: str) -> List[Dict[str, Any]]:
-        """Get extraction strategies for a domain."""
-        try:
-            result = self.client.table("extraction_strategies")\
-                .select("*")\
-                .eq("domain", domain)\
-                .execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting strategies: {str(e)}")
-            raise DatabaseError(f"Failed to get strategies: {str(e)}")
-
-    # Aggregations operations
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def insert_aggregation(self, aggregation_data: Dict[str, Any]):
-        """Insert an aggregation record."""
-        try:
-            # Validate data
-            aggregation = Aggregation(**aggregation_data)
-            
-            # Insert into database
-            self.client.table("aggregations").insert(aggregation.dict()).execute()
-            
-        except Exception as e:
-            logger.error(f"Error inserting aggregation: {str(e)}")
-            raise DatabaseError(f"Failed to insert aggregation: {str(e)}")
-
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_price_trend(self, url_id: str) -> Dict[str, Any]:
-        """Get price trend for a URL."""
-        try:
-            result = self.client.table("aggregations")\
-                .select("*")\
-                .eq("url_id", url_id)\
-                .order("period_end", desc=True)\
-                .limit(1)\
-                .execute()
-            return result.data[0] if result.data else None
-        except Exception as e:
-            logger.error(f"Error getting price trend: {str(e)}")
-            raise DatabaseError(f"Failed to get price trend: {str(e)}")
-
-    # Analytics queries
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_failed_urls(self, days: int = 7) -> List[Dict[str, Any]]:
-        """Get URLs with most failures in the last N days."""
-        try:
-            start_date = datetime.utcnow() - timedelta(days=days)
-            result = self.client.table("scrape_logs")\
-                .select("url_id, count(*)")\
-                .neq("status", "success")\
-                .gte("timestamp", start_date.isoformat())\
-                .group("url_id")\
-                .order("count", desc=True)\
-                .execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting failed URLs: {str(e)}")
-            raise DatabaseError(f"Failed to get failed URLs: {str(e)}")
-
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_blocked_domains(self, days: int = 7) -> List[Dict[str, Any]]:
-        """Get domains with highest block rate."""
-        try:
-            start_date = datetime.utcnow() - timedelta(days=days)
-            result = self.client.table("scrape_logs")\
-                .select("domain, count(*)")\
-                .eq("error_type", "captcha")\
-                .gte("timestamp", start_date.isoformat())\
-                .group("domain")\
-                .order("count", desc=True)\
-                .execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting blocked domains: {str(e)}")
-            raise DatabaseError(f"Failed to get blocked domains: {str(e)}")
-
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def get_price_variations(self, threshold: float = 10.0, days: int = 30) -> List[Dict[str, Any]]:
-        """Get products with price variation above threshold."""
-        try:
-            start_date = datetime.utcnow() - timedelta(days=days)
-            result = self.client.table("aggregations")\
-                .select("*")\
-                .gte("price_change_percent", threshold)\
-                .gte("period_start", start_date.isoformat())\
-                .order("price_change_percent", desc=True)\
-                .execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error getting price variations: {str(e)}")
-            raise DatabaseError(f"Failed to get price variations: {str(e)}")
-
 if __name__ == "__main__":
     # Example usage
     async def main():
         db = Database()
+        await db._ensure_tables_exist()
         
         # Add a new URL
         url_id = await db.add_url({
@@ -354,15 +333,11 @@ if __name__ == "__main__":
         })
         
         # Insert price history
-        await db.insert_price_history_bulk([{
+        await db.insert_price_history({
             "url_id": url_id,
             "price": 99.99,
             "currency": "BRL"
-        }])
-        
-        # Get price trend
-        trend = await db.get_price_trend(url_id)
-        print(f"Price trend: {trend}")
+        })
     
     import asyncio
     asyncio.run(main())

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass
 from loguru import logger
-from config.settings import settings
+from src.config.settings import settings
 
 @dataclass
 class ScrapeMetrics:
@@ -453,7 +453,6 @@ if __name__ == "__main__":
         
         # Get domain stats
         stats = await collector.get_domain_stats("example.com")
-        print(f"Domain stats: {stats}")
         
         # Stop monitoring
         await collector.stop_monitoring()

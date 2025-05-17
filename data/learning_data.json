@@ -1,0 +1,44 @@
+{
+  "www.amazon.com.br": {
+    "domain": "www.amazon.com.br",
+    "selectors": {
+      "price": [
+        {
+          "selector": "all",
+          "success_count": 0,
+          "failure_count": 1,
+          "last_success": null,
+          "last_failure": "2025-05-16T17:30:24.710854",
+          "avg_response_time": 0.02464771270751953,
+          "pattern_changes": []
+        }
+      ],
+      "title": [
+        {
+          "selector": "all",
+          "success_count": 0,
+          "failure_count": 1,
+          "last_success": null,
+          "last_failure": "2025-05-16T17:30:24.730233",
+          "avg_response_time": 0.01838064193725586,
+          "pattern_changes": []
+        }
+      ],
+      "seller": [
+        {
+          "selector": "all",
+          "success_count": 0,
+          "failure_count": 1,
+          "last_success": null,
+          "last_failure": "2025-05-16T17:30:24.750233",
+          "avg_response_time": 0.017982006072998047,
+          "pattern_changes": []
+        }
+      ]
+    },
+    "last_updated": "2025-05-16T17:30:24.750233",
+    "success_rate": 0.0,
+    "avg_response_time": 0.02033678690592448,
+    "pattern_changes": []
+  }
+}

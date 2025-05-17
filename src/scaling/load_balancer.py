@@ -83,13 +83,13 @@ class LoadBalancer:
             await asyncio.sleep(self.config.metrics_interval)
 
     def _get_active_connections(self) -> int:
-        """Get number of active connections."""
-        # TODO: Implement actual connection counting
+        """Get number of active connections. NÃO IMPLEMENTADO: Retorna valor fictício para produção."""
+        # Limitação: Contagem real de conexões não implementada nesta versão.
         return len(psutil.Process().connections())
 
     def _get_queue_size(self) -> int:
-        """Get current queue size."""
-        # TODO: Implement actual queue size monitoring
+        """Get current queue size. NÃO IMPLEMENTADO: Retorna valor fictício para produção."""
+        # Limitação: Monitoramento real do tamanho da fila não implementado nesta versão.
         return 0
 
     async def _check_scaling(self):
@@ -127,9 +127,9 @@ class LoadBalancer:
                     await self._scale_down()
 
     async def _scale_up(self):
-        """Scale up the number of instances."""
+        """Scale up the number of instances. NÃO IMPLEMENTADO: Apenas incrementa contador local."""
         try:
-            # TODO: Implement actual instance creation
+            # Limitação: Criação real de instâncias não implementada nesta versão.
             self._active_instances += 1
             self._last_scale_time = datetime.utcnow()
             logger.info(f"Scaling up to {self._active_instances} instances")
@@ -137,9 +137,9 @@ class LoadBalancer:
             logger.error(f"Error scaling up: {e}")
 
     async def _scale_down(self):
-        """Scale down the number of instances."""
+        """Scale down the number of instances. NÃO IMPLEMENTADO: Apenas decrementa contador local."""
         try:
-            # TODO: Implement actual instance termination
+            # Limitação: Remoção real de instâncias não implementada nesta versão.
             self._active_instances -= 1
             self._last_scale_time = datetime.utcnow()
             logger.info(f"Scaling down to {self._active_instances} instances")

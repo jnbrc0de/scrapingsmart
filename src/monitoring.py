@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass
 import asyncio
-from config.settings import (
+from src.config.settings import (
     ALERT_THRESHOLDS,
     MONITORING_INTERVAL,
     ALERT_COOLDOWN
@@ -171,12 +171,14 @@ class MonitoringSystem:
         # Implement immediate actions for high severity alerts
         logger.error(f"High severity alert requires immediate attention: {alert.message}")
         # TODO: Implement specific actions (e.g., notify team, pause scraping)
+        # Limitação: Ações específicas de resposta não implementadas nesta versão.
 
     async def _handle_medium_severity_alert(self, alert: Alert) -> None:
         """Handle medium severity alerts."""
         # Implement actions for medium severity alerts
         logger.warning(f"Medium severity alert requires monitoring: {alert.message}")
         # TODO: Implement specific actions (e.g., increase monitoring frequency)
+        # Limitação: Ações específicas de ajuste de monitoramento não implementadas nesta versão.
 
     def get_domain_metrics(self, domain: str) -> Optional[DomainMetrics]:
         """Get current metrics for a domain."""

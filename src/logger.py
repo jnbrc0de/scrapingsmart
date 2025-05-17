@@ -84,7 +84,6 @@ class AlertManager:
         
         # Check aggregation
         if self._should_aggregate(domain, level):
-            logger.debug(f"Aggregating {level} alert for {domain}")
             return
         
         # Format message
@@ -141,7 +140,6 @@ class AlertManager:
             
             # Send email (implement your SMTP logic here)
             # This is a placeholder - implement actual email sending
-            logger.debug(f"Would send email: {subject}")
             
         except Exception as e:
             logger.error(f"Failed to send email notification: {e}")

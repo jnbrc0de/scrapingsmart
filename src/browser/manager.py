@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
 from loguru import logger
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
-from config.settings import settings
+from src.config.settings import settings
 
 @dataclass
 class BrowserProfile:
@@ -90,8 +90,9 @@ class BrowserPool:
 
 class BrowserManager:
     """Manages browser instances with anti-detection features."""
-    def __init__(self, notifier=None):
-        self.pool = BrowserPool(max_browsers=settings.MAX_BROWSERS)
+    def __init__(self, config=None, notifier=None):
+        self.config = config or settings
+        self.pool = BrowserPool(max_browsers=self.config.MAX_BROWSERS)
         self.notifier = notifier
         self._setup_logging()
         self._load_profiles()
@@ -99,16 +100,16 @@ class BrowserManager:
         self._pages: Dict[str, Page] = {}
         self._sessions: Dict[str, Dict] = {}
         self._lock = asyncio.Lock()
-        self._session_file = "browser_sessions.json"
+        self._session_file = self.config.SESSION_FILE
         self._load_sessions()
 
     def _setup_logging(self):
         """Configure logging with loguru."""
         logger.add(
-            "logs/browser_{time}.log",
-            rotation=settings.LOG_ROTATION_SIZE,
-            retention=f"{settings.LOG_RETENTION_DAYS} days",
-            level=settings.LOG_LEVEL,
+            str(self.config.LOG_DIR / "browser_{time}.log"),
+            rotation=self.config.LOG_ROTATION_SIZE,
+            retention=f"{self.config.LOG_RETENTION_DAYS} days",
+            level=self.config.LOG_LEVEL,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
         )
 
@@ -132,10 +133,38 @@ class BrowserManager:
         await self.pool.cleanup()
         logger.info("Browser manager cleaned up")
 
+    async def get_browser(self, domain: str) -> Browser:
+        """Get or create a browser instance for a domain."""
+        async with self._lock:
+            if domain not in self._browsers:
+                browser = await self.pool.get_browser(domain)
+                self._browsers[domain] = browser
+            return self._browsers[domain]
+
+    async def close_browser(self, browser: Browser):
+        """Close a browser instance."""
+        try:
+            await browser.close()
+            # Remove from internal tracking
+            for domain, b in list(self._browsers.items()):
+                if b == browser:
+                    del self._browsers[domain]
+                    if domain in self._pages:
+                        del self._pages[domain]
+            logger.info("Browser closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing browser: {str(e)}")
+            if self.notifier:
+                await self.notifier.send_alert(
+                    level="error",
+                    message=f"Browser cleanup failed: {str(e)}",
+                    event="browser_cleanup_error"
+                )
+
     async def get_browser_context(self, domain: str) -> BrowserContext:
         """Get a browser context with anti-detection features."""
         try:
-            browser = await self.pool.get_browser(domain)
+            browser = await self.get_browser(domain)
             profile = self._get_random_profile()
             
             context = await browser.new_context(
@@ -146,10 +175,10 @@ class BrowserManager:
                 geolocation={"latitude": -23.5505, "longitude": -46.6333},
                 permissions=["geolocation"],
                 proxy={
-                    "server": settings.PROXY_SERVER,
-                    "username": settings.PROXY_USERNAME,
-                    "password": settings.PROXY_PASSWORD
-                }
+                    "server": self.config.PROXY_SERVER,
+                    "username": self.config.PROXY_USERNAME,
+                    "password": self.config.PROXY_PASSWORD
+                } if self.config.PROXY_ENABLED else None
             )
 
             # Apply anti-detection scripts
@@ -173,6 +202,13 @@ class BrowserManager:
 
     async def _apply_anti_detection(self, context: BrowserContext, profile: BrowserProfile):
         """Apply anti-detection measures to the browser context."""
+        # Block resources
+        await context.route("**/*", lambda route: route.abort() 
+            if any(resource in route.request.resource_type for resource in self.config.block_resources_list)
+            else route.continue_()
+        )
+        
+        # Apply stealth scripts
         await context.add_init_script("""
             // Override navigator properties
             Object.defineProperty(navigator, 'webdriver', {
@@ -260,9 +296,10 @@ class BrowserManager:
 
     def _load_sessions(self):
         """Carrega sessões salvas do arquivo."""
-        if os.path.exists(self._session_file):
+        session_file = self.config.TEMP_DIR / self._session_file
+        if session_file.exists():
             try:
-                with open(self._session_file, 'r') as f:
+                with open(session_file, 'r') as f:
                     self._sessions = json.load(f)
             except Exception as e:
                 logger.error(f"Error loading sessions: {e}")
@@ -271,13 +308,14 @@ class BrowserManager:
     def _save_sessions(self):
         """Salva sessões no arquivo."""
         try:
-            with open(self._session_file, 'w') as f:
+            session_file = self.config.TEMP_DIR / self._session_file
+            with open(session_file, 'w') as f:
                 json.dump(self._sessions, f)
         except Exception as e:
             logger.error(f"Error saving sessions: {e}")
 
     async def get_page(self, domain: str) -> Page:
-        """Obtém ou cria uma página para o domínio."""
+        """Get or create a page for a domain."""
         async with self._lock:
             if domain not in self._pages:
                 browser = await self.get_browser(domain)
@@ -287,29 +325,29 @@ class BrowserManager:
             return self._pages[domain]
 
     async def _setup_page(self, page: Page, domain: str):
-        """Configura uma nova página com perfil e configurações."""
-        # Aplica perfil de stealth
+        """Setup a new page with profile and settings."""
+        # Apply stealth profile
         await self._apply_stealth_profile(page, domain)
         
-        # Configura timeout
-        page.set_default_timeout(settings.TIMEOUT)
+        # Set timeout
+        page.set_default_timeout(self.config.PAGE_LOAD_TIMEOUT)
         
-        # Configura viewport
+        # Set viewport
         await page.set_viewport_size({
             'width': 1920,
             'height': 1080
         })
 
     async def _apply_stealth_profile(self, page: Page, domain: str):
-        """Aplica perfil de stealth à página."""
-        # Implementa técnicas anti-detecção
+        """Apply stealth profile to page."""
+        # Implement anti-detection techniques
         await page.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
         """)
         
-        # Aplica headers personalizados
+        # Apply custom headers
         await page.set_extra_http_headers({
             'User-Agent': self._get_random_profile().user_agent,
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
@@ -408,10 +446,6 @@ if __name__ == "__main__":
             
             # Navigate to a URL
             await page.goto("https://example.com")
-            
-            # Do something with the page
-            title = await page.title()
-            print(f"Page title: {title}")
             
             # Clean up
             await manager.close_browser_context(context)

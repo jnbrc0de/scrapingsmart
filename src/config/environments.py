@@ -32,7 +32,6 @@ class EnvironmentManager:
                     "max_connections": 100
                 },
                 monitoring={
-                    "apm_enabled": False,
                     "metrics_interval": 30,
                     "alert_threshold": 80.0
                 }
@@ -53,7 +52,6 @@ class EnvironmentManager:
                     "max_connections": 500
                 },
                 monitoring={
-                    "apm_enabled": True,
                     "metrics_interval": 60,
                     "alert_threshold": 85.0
                 }
@@ -74,7 +72,6 @@ class EnvironmentManager:
                     "max_connections": 1000
                 },
                 monitoring={
-                    "apm_enabled": True,
                     "metrics_interval": 30,
                     "alert_threshold": 90.0
                 }
@@ -136,7 +133,6 @@ class EnvironmentManager:
             "MAX_FILE_DESCRIPTORS": str(config.resource_limits["max_file_descriptors"]),
             "MAX_THREADS": str(config.resource_limits["max_threads"]),
             "MAX_CONNECTIONS": str(config.resource_limits["max_connections"]),
-            "APM_ENABLED": str(config.monitoring["apm_enabled"]).lower(),
             "METRICS_INTERVAL": str(config.monitoring["metrics_interval"]),
             "ALERT_THRESHOLD": str(config.monitoring["alert_threshold"])
         } 
