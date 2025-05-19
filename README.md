@@ -185,7 +185,7 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 - Todos os contribuidores
 - Bibliotecas utilizadas
-- Comunidade open source
+- Comunidade open source 
 
 ## 🏭 Deploy e Operação em Produção
 

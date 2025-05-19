@@ -1,9 +1,5 @@
 """
-Smart Scraping Project
-=====================
-
-Um sistema avançado de web scraping com suporte a múltiplas estratégias,
-gerenciamento de proxies, cache e monitoramento.
+ScrapingSmart - Um sistema inteligente de web scraping
 """
 
-__version__ = "1.0.0" 
+__version__ = "0.1.0" 
